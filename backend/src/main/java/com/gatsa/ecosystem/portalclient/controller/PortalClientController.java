@@ -9,6 +9,7 @@ import com.gatsa.ecosystem.publicsite.model.Lead;
 import com.gatsa.ecosystem.publicsite.repository.LeadRepository;
 import com.gatsa.ecosystem.repository.UserRepository;
 import com.gatsa.ecosystem.util.EmailService;
+import com.gatsa.ecosystem.util.ProcedureUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -72,7 +73,7 @@ public class PortalClientController {
             response.put("leads", List.of(
                     Map.of(
                             "id", 1,
-                            "procedureId", "GATSA-2026-8842",
+                            "procedureId", ProcedureUtils.generateProcedureId(1L),
                             "serviceOfInterest", "RETIRO_DESEMPLEO_AFORE",
                             "branch", "ORIZABA_BARRIO_NUEVO",
                             "status", "NUEVO",
@@ -110,7 +111,7 @@ public class PortalClientController {
 
                 Map<String, Object> leadMap = new HashMap<>();
                 leadMap.put("id", leadItem.getId());
-                leadMap.put("procedureId", "GATSA-2026-" + (1000 + leadItem.getId()));
+                leadMap.put("procedureId", ProcedureUtils.generateProcedureId(leadItem.getId()));
                 leadMap.put("serviceOfInterest", leadItem.getServiceOfInterest());
                 leadMap.put("branch", leadItem.getBranch());
                 leadMap.put("status", leadItem.getStatus());
@@ -148,7 +149,7 @@ public class PortalClientController {
             int currentStep = hasUploadedDocs ? 2 : 1;
             leadList.add(Map.of(
                     "id", 8000 + user.getId(),
-                    "procedureId", "GATSA-2026-" + (8000 + user.getId()),
+                    "procedureId", ProcedureUtils.generateProcedureId(8000 + user.getId()),
                     "serviceOfInterest", "RETIRO_PARCIAL_AFORE",
                     "branch", "ORIZABA_BARRIO_NUEVO",
                     "status", "NUEVO",
@@ -504,19 +505,19 @@ public class PortalClientController {
         if (lead != null && "NUEVO".equalsIgnoreCase(lead.getStatus())) {
             lead.setStatus("DOCUMENTOS_RECIBIDOS");
             leadRepository.save(lead);
-            System.out.println(">>> TRANSICIÓN AUTOMÁTICA DE ESTATUS EN MYSQL: GATSA-2026-" + (1000 + lead.getId()) + " -> DOCUMENTOS_RECIBIDOS <<<");
+            System.out.println(">>> TRANSICIÓN AUTOMÁTICA DE ESTATUS EN MYSQL: " + ProcedureUtils.generateProcedureId(lead.getId()) + " -> DOCUMENTOS_RECIBIDOS <<<");
         } else {
             List<Lead> userLeads = leadRepository.findByPhoneOrEmailOrderByCreatedAtDesc(user.getPhone(), user.getEmail());
             for (Lead l : userLeads) {
                 if ("NUEVO".equalsIgnoreCase(l.getStatus())) {
                     l.setStatus("DOCUMENTOS_RECIBIDOS");
                     leadRepository.save(l);
-                    System.out.println(">>> TRANSICIÓN AUTOMÁTICA DE ESTATUS EN MYSQL: GATSA-2026-" + (1000 + l.getId()) + " -> DOCUMENTOS_RECIBIDOS <<<");
+                    System.out.println(">>> TRANSICIÓN AUTOMÁTICA DE ESTATUS EN MYSQL: " + ProcedureUtils.generateProcedureId(l.getId()) + " -> DOCUMENTOS_RECIBIDOS <<<");
                 }
             }
         }
 
-        String procedureId = lead != null ? "GATSA-2026-" + (1000 + lead.getId()) : "GATSA-2026-" + (1000 + doc.getId());
+        String procedureId = lead != null ? ProcedureUtils.generateProcedureId(lead.getId()) : ProcedureUtils.generateProcedureId(doc.getId());
 
         try {
             emailService.sendDocumentUploadedNotifications(

@@ -23,14 +23,14 @@ public interface LeadRepository extends JpaRepository<Lead, Long> {
            " l.phone LIKE CONCAT('%', :search, '%') OR " +
            " LOWER(l.serviceOfInterest) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            " LOWER(l.email) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-           " CAST(l.id AS string) LIKE CONCAT('%', :search, '%'))")
-    Page<Lead> searchLeads(@Param("search") String search, Pageable pageable);
+           " l.id = :exactId)")
+    Page<Lead> searchLeads(@Param("search") String search, @Param("exactId") Long exactId, Pageable pageable);
 
     @Query("SELECT l FROM Lead l WHERE l.branch = :branch AND " +
            "(LOWER(l.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            " l.phone LIKE CONCAT('%', :search, '%') OR " +
            " LOWER(l.serviceOfInterest) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            " LOWER(l.email) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-           " CAST(l.id AS string) LIKE CONCAT('%', :search, '%'))")
-    Page<Lead> searchLeadsByBranch(@Param("branch") String branch, @Param("search") String search, Pageable pageable);
+           " l.id = :exactId)")
+    Page<Lead> searchLeadsByBranch(@Param("branch") String branch, @Param("search") String search, @Param("exactId") Long exactId, Pageable pageable);
 }

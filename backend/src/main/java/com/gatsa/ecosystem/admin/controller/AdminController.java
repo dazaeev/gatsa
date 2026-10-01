@@ -11,6 +11,7 @@ import com.gatsa.ecosystem.publicsite.model.Lead;
 import com.gatsa.ecosystem.publicsite.repository.LeadRepository;
 import com.gatsa.ecosystem.repository.UserRepository;
 import com.gatsa.ecosystem.util.EmailService;
+import com.gatsa.ecosystem.util.ProcedureUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -71,12 +72,13 @@ public class AdminController {
         boolean hasSearch = search != null && !search.isBlank();
         boolean hasBranch = branch != null && !"ALL".equalsIgnoreCase(branch);
 
-        String cleanSearch = hasSearch ? search.replaceAll("GATSA-2026-", "").trim() : "";
+        String cleanSearch = ProcedureUtils.cleanSearchTerm(search);
+        Long exactId = ProcedureUtils.parseLeadIdFromSearch(search);
 
         if (hasSearch && hasBranch) {
-            leadPage = leadRepository.searchLeadsByBranch(branch, cleanSearch, pageable);
+            leadPage = leadRepository.searchLeadsByBranch(branch, cleanSearch, exactId, pageable);
         } else if (hasSearch) {
-            leadPage = leadRepository.searchLeads(cleanSearch, pageable);
+            leadPage = leadRepository.searchLeads(cleanSearch, exactId, pageable);
         } else if (hasBranch) {
             leadPage = leadRepository.findByBranch(branch, pageable);
         } else {
@@ -160,7 +162,7 @@ public class AdminController {
 
         dictamenRepository.save(dictamen);
 
-        String procedureId = "GATSA-2026-" + (1000 + lead.getId());
+        String procedureId = ProcedureUtils.generateProcedureId(lead.getId());
 
         try {
             if (lead.getEmail() != null && !lead.getEmail().isBlank()) {
@@ -248,7 +250,7 @@ public class AdminController {
             for (Lead leadItem : clientLeads) {
                 Map<String, Object> leadMap = new HashMap<>();
                 leadMap.put("leadId", leadItem.getId());
-                leadMap.put("procedureId", "GATSA-2026-" + (1000 + leadItem.getId()));
+                leadMap.put("procedureId", ProcedureUtils.generateProcedureId(leadItem.getId()));
                 leadMap.put("serviceOfInterest", leadItem.getServiceOfInterest());
                 leadMap.put("branch", leadItem.getBranch());
                 

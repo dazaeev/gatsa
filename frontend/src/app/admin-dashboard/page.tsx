@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ShieldAlert, Users, Phone, Search, FileText, Settings, Save, CheckCircle2, Lock, LogIn, ArrowRight, Eye, Download, X, FileCheck2, Clock, Layers, Building2, Mail, Edit3, ChevronLeft, ChevronRight, Award, RefreshCcw, Trash2, UserCheck, ChevronDown, ChevronUp, LayoutList, User } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
+import { formatProcedureId } from '@/utils/procedureUtils';
 
 interface Lead {
   id: number;
@@ -446,7 +447,7 @@ export default function AdminDashboardPage() {
 
         <div className="px-4 py-2 bg-slate-800 rounded-xl border border-slate-700 text-center">
           <span className="text-[11px] text-slate-400 block font-semibold uppercase">Total Solicitudes</span>
-          <span className="text-xl font-bold text-sky-400">{leads.length} Registros</span>
+          <span className="text-xl font-bold text-sky-400">{totalLeadsCount} Registros</span>
         </div>
       </div>
 
@@ -457,7 +458,7 @@ export default function AdminDashboardPage() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
-            placeholder="Buscar por cliente, teléfono, folio (ej. GATSA-2026-1019) o servicio..."
+            placeholder={`Buscar por cliente, teléfono, folio (ej. ${formatProcedureId(19)}) o servicio...`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:outline-none focus:border-sky-600"
@@ -611,7 +612,7 @@ export default function AdminDashboardPage() {
                                 <div key={lead.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 text-xs">
                                   <div className="space-y-0.5">
                                     <span className="font-mono font-bold text-sky-600 text-xs block">
-                                      GATSA-2026-{1000 + lead.id}
+                                      {formatProcedureId(lead.id)}
                                     </span>
                                     <span className="font-bold text-slate-800">{lead.serviceOfInterest}</span>
                                     <span className="text-slate-500 block text-[11px]">Sucursal: {lead.branch}</span>
@@ -625,12 +626,13 @@ export default function AdminDashboardPage() {
                                     <button
                                       type="button"
                                       onClick={() => {
+                                        const procId = formatProcedureId(lead.id);
                                         if (lead.status === 'CONCLUIDO') {
-                                          if (confirm(`El trámite GATSA-2026-${1000 + lead.id} ya está CONCLUIDO. ¿Deseas reabrir el dictamen?`)) {
-                                            openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status);
+                                          if (confirm(`El trámite ${procId} ya está CONCLUIDO. ¿Deseas reabrir el dictamen?`)) {
+                                            openDictamenModal(lead.id, procId, lead.serviceOfInterest, lead.status);
                                           }
                                         } else {
-                                          openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status);
+                                          openDictamenModal(lead.id, procId, lead.serviceOfInterest, lead.status);
                                         }
                                       }}
                                       className={`px-3 py-1 rounded font-bold transition text-[11px] flex items-center gap-1 shadow-xs ${
@@ -699,59 +701,62 @@ export default function AdminDashboardPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {paginatedLeads.map((lead) => (
-                        <tr key={lead.id} className="hover:bg-slate-50 transition">
-                          <td className="py-3.5 px-4 font-bold text-slate-900">
-                            <span className="text-[10px] text-sky-600 font-mono block">GATSA-2026-{1000 + lead.id}</span>
-                            {lead.fullName}
-                          </td>
-                          <td className="py-3.5 px-4 font-mono text-sky-700">
-                            {lead.phone}
-                            <span className="block text-[10px] text-slate-500 font-sans">{lead.email || 'Sin correo'}</span>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px] text-slate-800 font-semibold">
-                              {lead.serviceOfInterest}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-slate-600">{lead.branch}</td>
-                          <td className="py-3.5 px-4">
-                            <span className={`px-2.5 py-1 border rounded-md font-bold text-[10px] ${getStatusBadgeStyle(lead.status)}`}>
-                              {lead.status}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-right space-x-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (lead.status === 'CONCLUIDO') {
-                                  if (confirm(`El trámite GATSA-2026-${1000 + lead.id} ya está CONCLUIDO. ¿Deseas reabrir el dictamen?`)) {
-                                    openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status);
+                      {paginatedLeads.map((lead) => {
+                        const procId = formatProcedureId(lead.id);
+                        return (
+                          <tr key={lead.id} className="hover:bg-slate-50 transition">
+                            <td className="py-3.5 px-4 font-bold text-slate-900">
+                              <span className="text-[10px] text-sky-600 font-mono block">{procId}</span>
+                              {lead.fullName}
+                            </td>
+                            <td className="py-3.5 px-4 font-mono text-sky-700">
+                              {lead.phone}
+                              <span className="block text-[10px] text-slate-500 font-sans">{lead.email || 'Sin correo'}</span>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px] text-slate-800 font-semibold">
+                                {lead.serviceOfInterest}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-600">{lead.branch}</td>
+                            <td className="py-3.5 px-4">
+                              <span className={`px-2.5 py-1 border rounded-md font-bold text-[10px] ${getStatusBadgeStyle(lead.status)}`}>
+                                {lead.status}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-right space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (lead.status === 'CONCLUIDO') {
+                                    if (confirm(`El trámite ${procId} ya está CONCLUIDO. ¿Deseas reabrir el dictamen?`)) {
+                                      openDictamenModal(lead.id, procId, lead.serviceOfInterest, lead.status);
+                                    }
+                                  } else {
+                                    openDictamenModal(lead.id, procId, lead.serviceOfInterest, lead.status);
                                   }
-                                } else {
-                                  openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status);
-                                }
-                              }}
-                              className={`px-3 py-1.5 rounded font-bold transition inline-flex items-center gap-1 shadow ${
-                                lead.status === 'CONCLUIDO'
-                                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
-                                  : 'bg-sky-600 hover:bg-sky-700 text-white'
-                              }`}
-                            >
-                              {lead.status === 'CONCLUIDO' ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Edit3 className="w-3 h-3" />}
-                              {lead.status === 'CONCLUIDO' ? 'Concluido' : 'Dictaminar'}
-                            </button>
-                            <a
-                              href={`https://wa.me/52${lead.phone.replaceAll(/\D/g, '')}?text=Hola%20${encodeURIComponent(lead.fullName)},%20te%20contactamos%20de%20GATSA%20respecto%20a%20tu%20tr%C3%A1mite%20GATSA-2026-${1000 + lead.id}.`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold transition inline-flex items-center gap-1"
-                            >
-                              <Phone className="w-3 h-3" /> Contactar
-                            </a>
-                          </td>
-                        </tr>
-                      ))}
+                                }}
+                                className={`px-3 py-1.5 rounded font-bold transition inline-flex items-center gap-1 shadow ${
+                                  lead.status === 'CONCLUIDO'
+                                    ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                                    : 'bg-sky-600 hover:bg-sky-700 text-white'
+                                }`}
+                              >
+                                {lead.status === 'CONCLUIDO' ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Edit3 className="w-3 h-3" />}
+                                {lead.status === 'CONCLUIDO' ? 'Concluido' : 'Dictaminar'}
+                              </button>
+                              <a
+                                href={`https://wa.me/52${lead.phone.replaceAll(/\D/g, '')}?text=Hola%20${encodeURIComponent(lead.fullName)},%20te%20contactamos%20de%20GATSA%20respecto%20a%20tu%20tr%C3%A1mite%20${procId}.`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold transition inline-flex items-center gap-1"
+                              >
+                                <Phone className="w-3 h-3" /> Contactar
+                              </a>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

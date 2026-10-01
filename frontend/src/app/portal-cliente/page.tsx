@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { FileText, CheckCircle2, Clock, Shield, FileCheck, LogIn, RefreshCw, Upload, Plus, X, MessageSquare, Lock, ArrowRight, FileCheck2, Info, FileCode, Layers, Download, Award, Eye, Trash2, RefreshCcw } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
+import { formatProcedureId } from '@/utils/procedureUtils';
 
 interface DocumentItem {
   id: number;
@@ -267,7 +268,7 @@ export default function PortalClientePage() {
           </h1>
           <div className="text-xs text-slate-300 space-y-1">
             <p>
-              Folio del Trámite Activo: <strong className="text-sky-400 font-mono">{activeProcedure?.procedureId || 'GATSA-2026-1001'}</strong>
+              Folio del Trámite Activo: <strong className="text-sky-400 font-mono">{activeProcedure?.procedureId || formatProcedureId(1)}</strong>
               <span className="mx-2">•</span>
               Servicio: <strong className="text-white">{activeProcedure?.serviceOfInterest || 'RETIRO_DESEMPLEO_AFORE'}</strong>
             </p>
