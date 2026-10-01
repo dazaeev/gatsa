@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Shield, MapPin, Phone, Clock, ExternalLink } from 'lucide-react';
+import { APP_VERSION } from '@/config/version';
 
 export const Footer: React.FC = () => {
   return (
@@ -84,18 +85,12 @@ export const Footer: React.FC = () => {
             <p className="text-xs text-slate-400">
               Consulta en tiempo real el estatus de tu expediente o administra tu saldo si eres socio comercial.
             </p>
-            <div className="pt-2 space-y-2">
+            <div className="pt-2">
               <Link
                 href="/login"
-                className="block w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 text-sky-400 border border-slate-700 rounded text-xs font-semibold text-center transition flex items-center justify-center gap-1"
+                className="block w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-xs text-center transition shadow-lg flex items-center justify-center gap-2"
               >
-                Acceder a Portal Clientes <ExternalLink className="w-3 h-3" />
-              </Link>
-              <Link
-                href="/login"
-                className="block w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700 rounded text-xs font-semibold text-center transition flex items-center justify-center gap-1"
-              >
-                Acceder a Portal Socios B2B <ExternalLink className="w-3 h-3" />
+                Acceso a Portales (Clientes / Socios / Admin) <ExternalLink className="w-3.5 h-3.5" />
               </Link>
             </div>
           </div>
@@ -103,7 +98,13 @@ export const Footer: React.FC = () => {
         </div>
 
         <div className="mt-12 pt-6 border-t border-slate-900 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p>© {new Date().getFullYear()} Grupo GATSA Servicios Financieros S.A. de C.V. Todos los derechos reservados.</p>
+          <div className="flex flex-col sm:flex-row items-center gap-2">
+            <p>© {new Date().getFullYear()} Grupo GATSA Servicios Financieros S.A. de C.V. Todos los derechos reservados.</p>
+            <span className="hidden sm:inline">•</span>
+            <span className="px-2 py-0.5 bg-slate-900 text-sky-400 border border-slate-800 rounded font-mono text-[10px] font-bold">
+              Plataforma {APP_VERSION}
+            </span>
+          </div>
           <div className="flex gap-4">
             <span className="hover:underline cursor-pointer">Aviso de Privacidad</span>
             <span>•</span>

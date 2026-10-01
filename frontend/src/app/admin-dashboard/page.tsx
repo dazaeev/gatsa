@@ -6,6 +6,7 @@ import { ShieldAlert, Users, Phone, Search, FileText, Settings, Save, CheckCircl
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { formatProcedureId } from '@/utils/procedureUtils';
+import { APP_VERSION } from '@/config/version';
 
 interface Lead {
   id: number;
@@ -440,6 +441,9 @@ export default function AdminDashboardPage() {
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-sky-500/20 border border-sky-400/30 text-sky-300 text-xs font-semibold rounded-full mb-2">
             <ShieldAlert className="w-4 h-4 text-sky-400" /> Panel de Control Administrador GATSA
+            <span className="ml-2 px-2 py-0.5 bg-sky-500/30 text-sky-200 text-[10px] font-mono rounded-full font-bold border border-sky-400/40">
+              {APP_VERSION}
+            </span>
           </div>
           <h1 className="text-2xl font-black text-white">Gestión Centralizada de Solicitudes y Documentos</h1>
           <p className="text-xs text-slate-400 mt-1">Supervisión en tiempo real de expedientes, INE cargados y notificaciones en BD.</p>
