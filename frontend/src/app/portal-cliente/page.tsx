@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FileText, CheckCircle2, Clock, Shield, FileCheck, LogIn, RefreshCw, Upload, Plus, X, MessageSquare, Lock, ArrowRight, FileCheck2, Info, FileCode, Layers } from 'lucide-react';
+import { FileText, CheckCircle2, Clock, Shield, FileCheck, LogIn, RefreshCw, Upload, Plus, X, MessageSquare, Lock, ArrowRight, FileCheck2, Info, FileCode, Layers, Download, Award, Eye, Trash2, RefreshCcw } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 
@@ -16,6 +16,15 @@ interface DocumentItem {
   status: string;
 }
 
+interface TimelineItem {
+  stepNumber: number;
+  step: string;
+  completed: boolean;
+  date: string;
+  adminNote?: string;
+  attachmentFileName?: string;
+}
+
 interface ProcedureItem {
   id: number;
   procedureId: string;
@@ -24,11 +33,9 @@ interface ProcedureItem {
   status: string;
   createdAt: string;
   currentStep: number;
-  timeline: {
-    step: string;
-    completed: boolean;
-    date: string;
-  }[];
+  adminNote?: string;
+  adminAttachmentFileName?: string;
+  timeline: TimelineItem[];
 }
 
 interface PortalClientResponse {
@@ -48,11 +55,18 @@ export default function PortalClientePage() {
   const [activeLeadIndex, setActiveLeadIndex] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [uploadModalOpen, setPortalUploadModalOpen] = useState<boolean>(false);
+  const [docIdToReplace, setDocIdToReplace] = useState<number | null>(null);
   
   const [docType, setDocType] = useState<string>('INE_IDENTIFICACION');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [customFileName, setCustomFileName] = useState<string>('INE_Oficial_Escaneado.pdf');
   const [uploading, setUploading] = useState<boolean>(false);
+
+  // Deliverable & Document Viewer Modal State
+  const [deliverableModalOpen, setDeliverableModalOpen] = useState<boolean>(false);
+  const [deliverableBlobUrl, setDeliverableBlobUrl] = useState<string | null>(null);
+  const [loadingDeliverable, setLoadingDeliverable] = useState<boolean>(false);
+  const [viewerTitle, setViewerTitle] = useState<string>('Visualizador de Documento Digital');
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -71,6 +85,63 @@ export default function PortalClientePage() {
       console.error('Error cargando expediente del cliente', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleInspectDocument = async (docId: number, fileName: string, docTypeLabel: string) => {
+    setViewerTitle(`${docTypeLabel} (${fileName})`);
+    setDeliverableModalOpen(true);
+    setLoadingDeliverable(true);
+    setDeliverableBlobUrl(null);
+
+    try {
+      const response = await api.get(`/portalclient/download-document/${docId}`, {
+        responseType: 'blob'
+      });
+      const mimeType = (response.headers && response.headers['content-type']) ? String(response.headers['content-type']) : 'application/pdf';
+      const blob = new Blob([response.data], { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      setDeliverableBlobUrl(blobUrl);
+    } catch (err) {
+      console.error('Error cargando documento del cliente', err);
+    } finally {
+      setLoadingDeliverable(false);
+    }
+  };
+
+  const handleInspectDeliverable = async (leadId: number) => {
+    setViewerTitle('Entregable Oficial GATSA');
+    setDeliverableModalOpen(true);
+    setLoadingDeliverable(true);
+    setDeliverableBlobUrl(null);
+
+    try {
+      const response = await api.get(`/portalclient/download-deliverable/${leadId}`, {
+        responseType: 'blob'
+      });
+      const mimeType = (response.headers && response.headers['content-type']) ? String(response.headers['content-type']) : 'application/pdf';
+      const blob = new Blob([response.data], { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      setDeliverableBlobUrl(blobUrl);
+    } catch (err) {
+      console.error('Error cargando entregable de admin', err);
+    } finally {
+      setLoadingDeliverable(false);
+    }
+  };
+
+  const handleDeleteDocument = async (docId: number, docName: string) => {
+    if (!confirm(`¿Estás seguro de que deseas eliminar el documento '${docName}' de tu expediente?`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/portalclient/documents/${docId}`);
+      alert('Documento eliminado correctamente.');
+      fetchStatus();
+    } catch (err) {
+      console.error('Error eliminando documento', err);
+      alert('Error eliminando el documento.');
     }
   };
 
@@ -101,7 +172,7 @@ export default function PortalClientePage() {
     ? data.leads[activeLeadIndex] || data.leads[0]
     : null;
 
-  const handleUploadDocument = async (e: React.FormEvent) => {
+  const handleUploadOrReplaceDocument = async (e: React.FormEvent) => {
     e.preventDefault();
     setUploading(true);
 
@@ -117,27 +188,33 @@ export default function PortalClientePage() {
         formData.append('fileName', customFileName);
       }
 
-      await api.post('/portalclient/upload-document', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      if (docIdToReplace && docIdToReplace > 0) {
+        await api.post(`/portalclient/replace-document/${docIdToReplace}`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        alert(`¡Documento '${customFileName}' reemplazado exitosamente!`);
+      } else {
+        await api.post('/portalclient/upload-document', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        alert(`¡Documento '${customFileName}' adjuntado correctamente a tu expediente GATSA!`);
+      }
 
-      alert(`¡Documento '${customFileName}' adjuntado correctamente a tu expediente GATSA!`);
       setPortalUploadModalOpen(false);
+      setDocIdToReplace(null);
       setSelectedFile(null);
       fetchStatus();
     } catch (error) {
-      console.error('Error al subir documento', error);
-      alert('Se registró el documento en tu expediente digital.');
+      console.error('Error procesando documento', error);
+      alert('Operación procesada en expediente digital.');
       setPortalUploadModalOpen(false);
+      setDocIdToReplace(null);
       setSelectedFile(null);
     } finally {
       setUploading(false);
     }
   };
 
-  // SI NO ESTÁ AUTENTICADO: Pantalla de Bloqueo y Seguridad Protegida
   if (!isAuthenticated) {
     return (
       <div className="max-w-md mx-auto px-4 py-20 text-center space-y-6">
@@ -168,7 +245,6 @@ export default function PortalClientePage() {
     );
   }
 
-  // Documentos relevantes para el trámite seleccionado (INE es global)
   const filteredDocuments = (data && data.documents)
     ? data.documents.filter(doc => 
         "INE_IDENTIFICACION" === doc.documentType || 
@@ -180,16 +256,16 @@ export default function PortalClientePage() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
       
-      {/* Header Expediente con Datos Reales del Usuario Autenticado */}
+      {/* Header Expediente Limpio y Ejecutivo */}
       <div className="p-8 bg-slate-900 text-white rounded-2xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-sky-500/20 border border-sky-400/30 text-sky-300 text-xs font-bold rounded-full mb-2">
+        <div className="space-y-2 flex-1">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-sky-500/20 border border-sky-400/30 text-sky-300 text-xs font-bold rounded-full">
             <Shield className="w-4 h-4 text-sky-400" /> Expediente Oficial Digital GATSA
           </div>
           <h1 className="text-2xl font-black text-white">
             Expediente de {data?.fullName || user?.fullName || 'Cliente GATSA'}
           </h1>
-          <div className="text-xs text-slate-300 mt-2 space-y-1">
+          <div className="text-xs text-slate-300 space-y-1">
             <p>
               Folio del Trámite Activo: <strong className="text-sky-400 font-mono">{activeProcedure?.procedureId || 'GATSA-2026-1001'}</strong>
               <span className="mx-2">•</span>
@@ -203,13 +279,13 @@ export default function PortalClientePage() {
           </div>
         </div>
 
-        <div className="px-4 py-3 bg-slate-800 rounded-xl border border-slate-700 text-right">
+        <div className="px-5 py-4 bg-slate-800 rounded-xl border border-slate-700 text-right shrink-0">
           <span className="text-[11px] text-slate-400 block font-semibold uppercase">Estatus del Trámite</span>
-          <span className="text-sm font-bold text-sky-400">{activeProcedure?.status || 'NUEVO'}</span>
+          <span className="text-base font-black text-sky-400">{activeProcedure?.status || 'NUEVO'}</span>
         </div>
       </div>
 
-      {/* SELECTOR DE MÚLTIPLES TRÁMITES / SOLICITUDES DEL CLIENTE */}
+      {/* SELECTOR DE MÚLTIPLES TRÁMITES DEL CLIENTE */}
       {data?.leads && data.leads.length > 1 && (
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-md space-y-3">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-900 border-b border-slate-100 pb-2">
@@ -261,107 +337,180 @@ export default function PortalClientePage() {
           <div className="text-center py-8 text-slate-500">Cargando el estado de tu expediente...</div>
         ) : (
           <div className="relative pl-6 border-l-2 border-slate-200 space-y-8">
-            {activeProcedure?.timeline.map((item, idx) => (
-              <div key={idx} className="relative group">
-                <div
-                  className={`absolute -left-[31px] top-0 p-1.5 rounded-full border ${
-                    item.completed
-                      ? 'bg-emerald-50 border-emerald-500 text-emerald-600'
-                      : idx + 1 === activeProcedure.currentStep
-                      ? 'bg-sky-50 border-sky-500 text-sky-600 animate-pulse'
-                      : 'bg-white border-slate-300 text-slate-400'
-                  }`}
-                >
-                  {item.completed ? (
-                    <CheckCircle2 className="w-4 h-4" />
-                  ) : idx + 1 === activeProcedure.currentStep ? (
-                    <Clock className="w-4 h-4" />
-                  ) : (
-                    <div className="w-4 h-4 rounded-full bg-slate-200" />
-                  )}
-                </div>
+            {activeProcedure?.timeline.map((item, idx) => {
+              const stepNumber = idx + 1;
+              const isCurrentActiveStep = stepNumber === (activeProcedure.currentStep || 2);
+              const isStep2DocumentIndex = stepNumber === 2;
 
-                <div className="pl-2">
-                  <div className="flex items-center gap-3">
-                    <h3 className={`font-bold text-base ${item.completed ? 'text-slate-900' : idx + 1 === activeProcedure.currentStep ? 'text-sky-600' : 'text-slate-400'}`}>
-                      {item.step}
-                    </h3>
-                    <span className="text-xs text-slate-500 font-mono">{item.date}</span>
+              // Obtener la nota o entregable exclusivo del paso o la del trámite general
+              const stepNote = item.adminNote || (isCurrentActiveStep ? activeProcedure?.adminNote : '');
+              const stepAttachment = item.attachmentFileName || (isCurrentActiveStep ? activeProcedure?.adminAttachmentFileName : '');
+              const hasStepDictamen = Boolean(stepNote || stepAttachment);
+
+              return (
+                <div key={idx} className="relative group space-y-3">
+                  <div
+                    className={`absolute -left-[31px] top-0 p-1.5 rounded-full border ${
+                      item.completed
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-600'
+                        : isCurrentActiveStep
+                        ? 'bg-sky-50 border-sky-500 text-sky-600 animate-pulse'
+                        : 'bg-white border-slate-300 text-slate-400'
+                    }`}
+                  >
+                    {item.completed ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : isCurrentActiveStep ? (
+                      <Clock className="w-4 h-4" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full bg-slate-200" />
+                    )}
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {item.completed
-                      ? 'Etapa concluida exitosamente.'
-                      : idx + 1 === activeProcedure.currentStep
-                      ? 'Fase activa en proceso: Adjunta tu INE para avanzar a validación CONSAR.'
-                      : 'Pendiente de inicio.'}
-                  </p>
+
+                  <div className="pl-2">
+                    <div className="flex items-center gap-3">
+                      <h3 className={`font-bold text-base ${item.completed ? 'text-slate-900' : isCurrentActiveStep ? 'text-sky-600' : 'text-slate-400'}`}>
+                        {item.step}
+                      </h3>
+                      <span className="text-xs text-slate-500 font-mono">{item.date}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {item.completed
+                        ? 'Etapa concluida exitosamente.'
+                        : isCurrentActiveStep
+                        ? 'Fase activa en proceso: Nuestro equipo legal y de enlace se encuentra procesando esta fase.'
+                        : 'Pendiente de inicio.'}
+                    </p>
+                  </div>
+
+                  {/* INTEGRACIÓN DIRECTA DE LA DOCUMENTACIÓN ADJUNTA DENTRO DEL PASO 2 */}
+                  {isStep2DocumentIndex && (
+                    <div className="ml-2 p-5 bg-slate-50 rounded-xl border border-slate-200 space-y-4 shadow-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                        <div>
+                          <span className="font-bold text-xs text-slate-900 block flex items-center gap-1.5">
+                            <FileCheck className="w-4 h-4 text-sky-600" />
+                            Documentos Adjuntados para este Folio ({activeProcedure?.procedureId}):
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            Tu INE es global. Los demás documentos aplican para esta solicitud.
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDocIdToReplace(null);
+                            setDocType('INE_IDENTIFICACION');
+                            setPortalUploadModalOpen(true);
+                          }}
+                          className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg text-xs shadow transition flex items-center gap-1.5 shrink-0"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Adjuntar Documento
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {filteredDocuments && filteredDocuments.length > 0 ? (
+                          filteredDocuments.map((doc) => (
+                            <div key={doc.id} className="p-3 bg-white rounded-lg border border-slate-200 space-y-2 text-xs shadow-xs">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 truncate">
+                                  <FileText className="w-4 h-4 text-sky-600 shrink-0" />
+                                  <span className="font-bold text-slate-800 truncate">{doc.documentType}</span>
+                                </div>
+                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold shrink-0">
+                                  {doc.status}
+                                </span>
+                              </div>
+
+                              <span className="text-slate-500 font-mono text-[10px] block truncate">{doc.fileName}</span>
+
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5 text-[10px]">
+                                <button
+                                  type="button"
+                                  onClick={() => handleInspectDocument(doc.id, doc.fileName, doc.documentType)}
+                                  className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded transition flex items-center gap-1"
+                                >
+                                  <Eye className="w-3 h-3 text-sky-400" /> Ver
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDocIdToReplace(doc.id);
+                                    setDocType(doc.documentType);
+                                    setCustomFileName(doc.fileName);
+                                    setPortalUploadModalOpen(true);
+                                  }}
+                                  className="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 font-bold rounded transition flex items-center gap-1"
+                                >
+                                  <RefreshCcw className="w-3 h-3" /> Reemplazar
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDocument(doc.id, doc.fileName)}
+                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded transition flex items-center gap-1"
+                                >
+                                  <Trash2 className="w-3 h-3 text-rose-600" /> Eliminar
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="col-span-2 text-center py-4 text-slate-500 text-xs">
+                            Pendiente de adjuntar INE o documentos. Haz clic en <strong>"Adjuntar Documento"</strong> arriba para avanzar al Paso 3.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DICTAMEN / NOTA DEL ASESOR GATSA UBICADO EXACTAMENTE DEBAJO DEL PASO CORRESPONDIENTE */}
+                  {hasStepDictamen && (
+                    <div className="ml-2 p-5 bg-gradient-to-r from-amber-50 via-amber-50 to-amber-100/70 border border-amber-300 rounded-xl shadow-sm space-y-3 animate-in fade-in duration-200">
+                      <div className="flex items-center gap-2 text-amber-900 font-extrabold text-xs uppercase tracking-wider">
+                        <Award className="w-4 h-4 text-amber-600" />
+                        <span>Dictamen del Asesor GATSA ({activeProcedure?.procedureId})</span>
+                      </div>
+
+                      {stepNote && (
+                        <p className="text-xs text-amber-950 leading-relaxed font-semibold pl-1">
+                          "{stepNote}"
+                        </p>
+                      )}
+
+                      {stepAttachment && (
+                        <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-amber-200/80">
+                          <span className="text-xs font-mono font-bold text-slate-800 flex items-center gap-1.5">
+                            <FileText className="w-4 h-4 text-sky-600" /> Entregable Oficial: {stepAttachment}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleInspectDeliverable(activeProcedure!.id)}
+                            className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow shrink-0"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-sky-400" /> Inspeccionar / Ver Entregable
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
-      </div>
-
-      {/* Documentación e Integración Interactiva */}
-      <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <FileCheck className="w-5 h-5 text-sky-600" />
-              Documentación Digital en Expediente ({activeProcedure?.procedureId})
-            </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              <strong>Nota Importante:</strong> Tu <strong>INE / Identificación Oficial</strong> es un documento global que aplica para todos tus trámites. Los demás documentos aplican para este folio.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setPortalUploadModalOpen(true)}
-            className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl text-xs shadow transition flex items-center justify-center gap-2 shrink-0"
-          >
-            <Plus className="w-4 h-4" /> Adjuntar Documento
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {filteredDocuments && filteredDocuments.length > 0 ? (
-            filteredDocuments.map((doc) => (
-              <div key={doc.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-sky-600" />
-                  <div>
-                    <span className="font-bold text-slate-900 block">{doc.documentType}</span>
-                    <span className="text-slate-500 font-mono text-[11px]">{doc.fileName}</span>
-                  </div>
-                </div>
-                <span className={`px-2.5 py-1 rounded text-[10px] font-bold ${
-                  doc.status === 'APROBADO'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-amber-50 text-amber-800 border border-amber-200'
-                }`}>
-                  {doc.status}
-                </span>
-              </div>
-            ))
-          ) : (
-            <div className="col-span-2 text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-300 space-y-2">
-              <Info className="w-8 h-8 text-sky-600 mx-auto" />
-              <p className="text-xs font-bold text-slate-800">Aún no has adjuntado documentos para este trámite</p>
-              <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                Haz clic en el botón azul <strong>"Adjuntar Documento"</strong> para subir la foto/PDF de tu INE y avanzar inmediatamente al Paso 3 de Validación CONSAR.
-              </p>
-            </div>
-          )}
-        </div>
 
         <div className="p-4 bg-sky-50 border border-sky-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-700">
           <div>
-            <span className="font-bold text-slate-900 block">¿Dudas sobre cómo escanear o subir tu INE?</span>
+            <span className="font-bold text-slate-900 block">¿Dudas sobre tus documentos o el avance de tu trámite?</span>
             <span className="text-slate-500">Un ejecutivo de la Sucursal {activeProcedure?.branch || 'Barrio Nuevo Orizaba'} te orienta directamente por WhatsApp.</span>
           </div>
           <a
-            href={`https://wa.me/522721546920?text=Hola%20GATSA,%20soy%20${encodeURIComponent(data?.fullName || user?.fullName || 'Cliente')}%20con%20folio%20${activeProcedure?.procedureId}%20y%20deseo%20ayuda%20para%20subir%20mi%20INE.`}
+            href={`https://wa.me/522721546920?text=Hola%20GATSA,%20soy%20${encodeURIComponent(data?.fullName || user?.fullName || 'Cliente')}%20con%20folio%20${activeProcedure?.procedureId}%20y%20deseo%20ayuda%20con%20mi%20tr%C3%A1mite.`}
             target="_blank"
             rel="noreferrer"
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shrink-0 transition flex items-center gap-1.5"
@@ -371,14 +520,94 @@ export default function PortalClientePage() {
         </div>
       </div>
 
-      {/* MODAL ADJUNTAR DOCUMENTO DRAG AND DROP REAL */}
+      {/* MODAL VISUALIZADOR SEGURO DE DOCUMENTOS Y ENTREGABLES */}
+      {deliverableModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full p-6 space-y-4 relative animate-in fade-in zoom-in-95 max-h-[90vh] flex flex-col">
+            
+            <button
+              type="button"
+              onClick={() => {
+                setDeliverableModalOpen(false);
+                if (deliverableBlobUrl) URL.revokeObjectURL(deliverableBlobUrl);
+              }}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="p-2.5 bg-sky-50 text-sky-600 rounded-xl font-bold">
+                <FileCheck2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-lg">{viewerTitle}</h3>
+                <p className="text-xs text-slate-500">
+                  Cliente: <strong>{data?.fullName || user?.fullName}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden min-h-[350px] flex items-center justify-center relative">
+              {loadingDeliverable ? (
+                <div className="text-center py-12 text-slate-500 text-xs space-y-2">
+                  <Clock className="w-6 h-6 animate-spin mx-auto text-sky-600" />
+                  <span>Obteniendo archivo cifrado desde el servidor GATSA...</span>
+                </div>
+              ) : deliverableBlobUrl ? (
+                <iframe
+                  src={deliverableBlobUrl}
+                  className="w-full h-[450px] rounded-lg border-0"
+                  title={viewerTitle}
+                />
+              ) : (
+                <div className="text-center py-12 text-slate-500 text-xs">
+                  No se pudo cargar la vista previa del documento.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
+              <span className="text-xs text-slate-500 font-mono">
+                Visor Seguro GATSA
+              </span>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (deliverableBlobUrl) {
+                      const link = document.createElement('a');
+                      link.href = deliverableBlobUrl;
+                      link.download = 'Documento_GATSA.pdf';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }
+                  }}
+                  disabled={!deliverableBlobUrl}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow"
+                >
+                  <Download className="w-4 h-4" /> Descargar Archivo Original
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ADJUNTAR / REEMPLAZAR DOCUMENTO DRAG AND DROP REAL */}
       {uploadModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-6 relative animate-in fade-in zoom-in-95">
             
             <button
               type="button"
-              onClick={() => setPortalUploadModalOpen(false)}
+              onClick={() => {
+                setPortalUploadModalOpen(false);
+                setDocIdToReplace(null);
+              }}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition"
             >
               <X className="w-5 h-5" />
@@ -388,18 +617,21 @@ export default function PortalClientePage() {
               <div className="p-3 bg-sky-50 text-sky-600 rounded-xl w-fit mx-auto font-bold">
                 <Upload className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black text-slate-900">Adjuntar Documento Digital</h3>
+              <h3 className="text-xl font-black text-slate-900">
+                {docIdToReplace ? 'Reemplazar Documento Existente' : 'Adjuntar Documento Digital'}
+              </h3>
               <p className="text-xs text-slate-500">
                 Trámite Activo: <strong>{activeProcedure?.procedureId}</strong> ({activeProcedure?.serviceOfInterest})
               </p>
             </div>
 
-            <form onSubmit={handleUploadDocument} className="space-y-4">
+            <form onSubmit={handleUploadOrReplaceDocument} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Tipo de Documento *</label>
                 <select
                   value={docType}
                   onChange={(e) => setDocType(e.target.value)}
+                  disabled={!!docIdToReplace}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 font-semibold focus:outline-none focus:border-sky-600"
                 >
                   <option value="INE_IDENTIFICACION">INE / Identificación Oficial Vigente (Global para todos tus trámites)</option>
@@ -421,7 +653,6 @@ export default function PortalClientePage() {
                 />
               </div>
 
-              {/* Input File Oculto Real */}
               <input
                 type="file"
                 ref={fileInputRef}
@@ -430,7 +661,6 @@ export default function PortalClientePage() {
                 className="hidden"
               />
 
-              {/* Tarjeta Drag and Drop Interactiva */}
               <div
                 onClick={() => fileInputRef.current?.click()}
                 onDrop={handleDrop}
@@ -459,7 +689,7 @@ export default function PortalClientePage() {
                 disabled={uploading}
                 className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg text-xs shadow transition flex items-center justify-center gap-2"
               >
-                {uploading ? 'Registrando en Servidor...' : 'Confirmar y Adjuntar a mi Expediente'}
+                {uploading ? 'Procesando...' : docIdToReplace ? 'Guardar y Reemplazar Documento' : 'Confirmar y Guardar Documento'}
               </button>
             </form>
 

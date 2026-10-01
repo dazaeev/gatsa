@@ -12,9 +12,11 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
+
 /**
  * Servicio de Notificaciones por Correo Electrónico Corporativo GATSA.
- * Adapta el mensaje de acceso según si es un cliente NUEVO o un cliente EXISTENTE.
+ * Envía copia (CC) automática a los administradores en BD para auditoría operativa.
  */
 @Service
 public class EmailService {
@@ -33,10 +35,21 @@ public class EmailService {
     @Value("${app.mail.admin-notification-email:ing.dazaeev@gmail.com}")
     private String defaultAdminEmail;
 
-    public String getAdminEmail() {
+    public String getAdminEmailRaw() {
         return configRepository.findByConfigKey("ADMIN_NOTIFICATION_EMAIL")
                 .map(SystemConfiguration::getConfigValue)
                 .orElse(defaultAdminEmail);
+    }
+
+    private String[] parseAdminEmails() {
+        String raw = getAdminEmailRaw();
+        if (raw == null || raw.isBlank()) {
+            return new String[]{defaultAdminEmail};
+        }
+        return Arrays.stream(raw.split("[,;]"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toArray(String[]::new);
     }
 
     private String getLogoSvgHtml() {
@@ -57,18 +70,15 @@ public class EmailService {
     }
 
     /**
-     * Envía confirmación de solicitud adaptando el mensaje si la cuenta ya existía previamente.
+     * Envía notificación con Dictamen al Cliente y copia CC obligatoria a los Administradores en BD.
      */
     @Async
-    public void sendLeadNotificationEmail(String clientEmail, String clientName, String clientPhone, String branch, String service, String notes, boolean isExistingUser) {
-        if (mailSender == null) {
-            logger.warn("[EMAIL CONFIG WARNING] JavaMailSender no configurado.");
-            return;
-        }
+    public void sendStatusChangedNotificationWithDictamen(String clientEmail, String clientName, String procedureId, String service, String newStatus, String adminNote, String attachmentFileName) {
+        if (mailSender == null) return;
 
         try {
-            String adminTarget = getAdminEmail();
-            String primaryRecipient = (clientEmail != null && !clientEmail.isBlank()) ? clientEmail : adminTarget;
+            String[] adminRecipients = parseAdminEmails();
+            String primaryRecipient = (clientEmail != null && !clientEmail.isBlank()) ? clientEmail : adminRecipients[0];
 
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
@@ -76,15 +86,95 @@ public class EmailService {
             helper.setFrom(fromEmail);
             helper.setTo(primaryRecipient);
 
-            if (!primaryRecipient.equalsIgnoreCase(adminTarget) && adminTarget != null && !adminTarget.isBlank()) {
-                helper.setCc(adminTarget);
+            // Copia CC obligatoria al Administrador/Agentes de GATSA para auditoría
+            if (adminRecipients.length > 0) {
+                helper.setCc(adminRecipients);
+            }
+
+            helper.setSubject("Dictamen y Actualización de Trámite: " + procedureId + " - Grupo GATSA");
+
+            String noteBlockHtml = (adminNote != null && !adminNote.isBlank())
+                    ? """
+                      <div style="background-color: #fffbe3; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 13px; color: #78350f;">
+                          <strong>Mensaje de tu Asesor GATSA:</strong><br>
+                          "%s"
+                      </div>
+                      """.formatted(adminNote)
+                    : "";
+
+            String attachmentBlockHtml = (attachmentFileName != null && !attachmentFileName.isBlank())
+                    ? """
+                      <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 12px; color: #166534;">
+                          <strong>Documento Entregable Adjunto:</strong> %s<br>
+                          <em>(Puedes consultar y descargar este documento oficial desde tu portal privado GATSA).</em>
+                      </div>
+                      """.formatted(attachmentFileName)
+                    : "";
+
+            String htmlBody = """
+                <!DOCTYPE html>
+                <html>
+                <body style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 20px;">
+                    <div style="max-width: 600px; background: #ffffff; margin: 0 auto; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);">
+                        <div style="background: linear-gradient(135deg, #0F2C59 0%%, #0B192C 100%%); padding: 24px; text-align: center; border-bottom: 4px solid #0072CE;">
+                            %s
+                        </div>
+                        <div style="padding: 32px; color: #1e293b; line-height: 1.6;">
+                            <h3 style="color: #0F2C59; margin-top: 0; font-size: 20px;">Dictamen de Avance de Trámite</h3>
+                            <p>Estimado(a) <strong>%s</strong>,</p>
+                            <p>Te informamos que tu expediente <strong>%s</strong> para el servicio <strong>%s</strong> ha sido dictaminado con éxito.</p>
+                            
+                            <div style="background-color: #f0f9ff; border: 2px solid #0072CE; padding: 20px; border-radius: 12px; margin: 20px 0; text-align: center;">
+                                <div style="font-size: 12px; color: #0369a1; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">Estatus Actualizado en Sistema</div>
+                                <div style="font-size: 22px; font-weight: 900; color: #0072CE; margin-top: 6px;">%s</div>
+                            </div>
+
+                            %s
+                            %s
+
+                            <p style="font-size: 13px; color: #64748b;">Puedes consultar el detalle completo de la línea de tiempo e ingresar documentos desde tu portal privado.</p>
+                            <div style="text-align: center; margin-top: 24px;">
+                                <a href="http://localhost:3000/portal-cliente" style="background-color: #0072CE; color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 8px; font-size: 13px;">Ingresar a Mi Expediente</a>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """.formatted(getLogoSvgHtml(), clientName, procedureId, service, newStatus, noteBlockHtml, attachmentBlockHtml);
+
+            helper.setText(htmlBody, true);
+            mailSender.send(message);
+            logger.info(">>> NOTIFICACIÓN CON DICTAMEN ENVIADA A CLIENTE: {} (CC ADMIN: {}) <<<", primaryRecipient, String.join(", ", adminRecipients));
+        } catch (Exception e) {
+            logger.error("Error enviando notificación de dictamen: ", e);
+        }
+    }
+
+    /**
+     * Envía confirmación de solicitud al cliente e instruye sus credenciales intuitivas de acceso al portal.
+     */
+    @Async
+    public void sendLeadNotificationEmail(String clientEmail, String clientName, String clientPhone, String branch, String service, String notes, boolean isExistingUser) {
+        if (mailSender == null) return;
+
+        try {
+            String[] adminRecipients = parseAdminEmails();
+            String primaryRecipient = (clientEmail != null && !clientEmail.isBlank()) ? clientEmail : adminRecipients[0];
+
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(fromEmail);
+            helper.setTo(primaryRecipient);
+
+            if (adminRecipients.length > 0) {
+                helper.setCc(adminRecipients);
             }
 
             helper.setSubject("Solicitud Registrada - Grupo GATSA");
 
             String cleanPhone = clientPhone != null ? clientPhone.replaceAll("\\D", "") : "";
 
-            // Caja de acceso condicional según si el usuario es NUEVO o YA EXISTE
             String accessBoxHtml;
             if (isExistingUser) {
                 accessBoxHtml = """
@@ -164,20 +254,20 @@ public class EmailService {
 
             helper.setText(htmlBody, true);
             mailSender.send(message);
-            logger.info(">>> CORREO DE LEAD ENVIADO EXITOSAMENTE a: {} (CC: {}) <<<", primaryRecipient, adminTarget);
+            logger.info(">>> CORREO DE LEAD ENVIADO EXITOSAMENTE a: {} (CC: {}) <<<", primaryRecipient, String.join(", ", adminRecipients));
         } catch (Exception e) {
             logger.error("!!! ERROR AL ENVIAR CORREO ELECTRONICO DE LEAD !!!: ", e);
         }
     }
 
     /**
-     * Envía correo al cliente confirmando la recepción del documento + envío independiente de Alerta Operativa al Administrador en BD.
+     * Envía correo al cliente confirmando la recepción del documento + envío independiente a todos los Administradores configurados en BD.
      */
     @Async
     public void sendDocumentUploadedNotifications(String clientEmail, String clientName, String clientPhone, String docType, String fileName, String procedureId) {
         if (mailSender == null) return;
 
-        String adminTarget = getAdminEmail();
+        String[] adminRecipients = parseAdminEmails();
 
         if (clientEmail != null && !clientEmail.isBlank()) {
             try {
@@ -200,7 +290,7 @@ public class EmailService {
                                 <p>Estimado(a) <strong>%s</strong>,</p>
                                 <p>Confirmamos la recepción del documento <strong>%s</strong> (<em>%s</em>) en tu expediente <strong>%s</strong>.</p>
                                 <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                                    <strong style="color: #15803d;">Estatus Actual:</strong> Tu trámite ha avanzado a la fase de <strong>Validación en Sistema AFORE / CONSAR</strong>.
+                                    <strong style="color: #15803d;">Estatus Actual:</strong> Tu trámite ha avanzado a la fase de <strong>Validación de Expediente</strong>.
                                 </div>
                                 <p style="font-size: 12px; color: #64748b;">Un ejecutivo revisará la legibilidad de tu archivo. Puedes consultar el avance en tiempo real desde tu portal.</p>
                                 <div style="text-align: center; margin-top: 20px;">
@@ -220,12 +310,12 @@ public class EmailService {
             }
         }
 
-        if (adminTarget != null && !adminTarget.isBlank()) {
+        if (adminRecipients.length > 0) {
             try {
                 MimeMessage adminMsg = mailSender.createMimeMessage();
                 MimeMessageHelper adminHelper = new MimeMessageHelper(adminMsg, true, "UTF-8");
                 adminHelper.setFrom(fromEmail);
-                adminHelper.setTo(adminTarget);
+                adminHelper.setTo(adminRecipients);
                 adminHelper.setSubject("ALERTA OPERATIVA GATSA: Nuevo Documento Cargado por " + clientName + " (" + procedureId + ")");
 
                 String htmlAdmin = """
@@ -258,7 +348,7 @@ public class EmailService {
 
                 adminHelper.setText(htmlAdmin, true);
                 mailSender.send(adminMsg);
-                logger.info(">>> ALERTA DE DOCUMENTO ENVIADA AL ADMINISTRADOR EN BD: {} <<<", adminTarget);
+                logger.info(">>> ALERTA DE DOCUMENTO ENVIADA A LOS ADMINISTRADORES EN BD: {} <<<", String.join(", ", adminRecipients));
             } catch (Exception e) {
                 logger.error("Error enviando alerta de documento al administrador: ", e);
             }
@@ -273,16 +363,16 @@ public class EmailService {
         if (mailSender == null) return;
 
         try {
-            String adminTarget = getAdminEmail();
-            String primaryRecipient = (clientEmail != null && !clientEmail.isBlank()) ? clientEmail : adminTarget;
+            String[] adminRecipients = parseAdminEmails();
+            String primaryRecipient = (clientEmail != null && !clientEmail.isBlank()) ? clientEmail : adminRecipients[0];
 
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
             helper.setFrom(fromEmail);
             helper.setTo(primaryRecipient);
-            if (!primaryRecipient.equalsIgnoreCase(adminTarget) && adminTarget != null && !adminTarget.isBlank()) {
-                helper.setCc(adminTarget);
+            if (adminRecipients.length > 0) {
+                helper.setCc(adminRecipients);
             }
             helper.setSubject("Cotización Oficial: Seguro de " + insuranceType + " - " + clientName + " - Grupo GATSA");
 
@@ -343,9 +433,9 @@ public class EmailService {
 
             helper.setText(htmlBody, true);
             mailSender.send(message);
-            logger.info(">>> CORREO DE COTIZACIÓN ENVIADO EXITOSAMENTE a: {} (CC: {}) <<<", primaryRecipient, adminTarget);
+            logger.info(">>> CORREO DE COTIZACIÓN ENVIADO EXITOSAMENTE a: {} (CC: {}) <<<", primaryRecipient, String.join(", ", adminRecipients));
         } catch (Exception e) {
-            logger.error("!!! ERROR AL ENVIAR CORREO DE COTIZACIÓN !!!: ", e);
+            logger.error("Error enviando correo de cotización: ", e);
         }
     }
 }

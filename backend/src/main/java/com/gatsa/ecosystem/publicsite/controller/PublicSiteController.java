@@ -2,6 +2,8 @@ package com.gatsa.ecosystem.publicsite.controller;
 
 import com.gatsa.ecosystem.constant.SecurityConstants;
 import com.gatsa.ecosystem.model.User;
+import com.gatsa.ecosystem.portalclient.model.Document;
+import com.gatsa.ecosystem.portalclient.repository.DocumentRepository;
 import com.gatsa.ecosystem.publicsite.dto.InsuranceQuoteRequest;
 import com.gatsa.ecosystem.publicsite.dto.LeadCaptureRequest;
 import com.gatsa.ecosystem.publicsite.dto.PostCreateRequest;
@@ -34,6 +36,9 @@ public class PublicSiteController {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private DocumentRepository documentRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -95,6 +100,18 @@ public class PublicSiteController {
             basePremium = 2800.0;
         }
 
+        // 1. Verificar si el usuario ya tiene documentos subidos
+        Map<String, Object> userResult = ensureUserAccountExists(request.getFullName(), request.getPhone(), request.getEmail());
+        boolean isExistingUser = (boolean) userResult.getOrDefault("isExistingUser", false);
+        User user = (User) userResult.get("user");
+
+        boolean hasDocs = false;
+        if (user != null) {
+            List<Document> docs = documentRepository.findByUserIdOrderByUploadedAtDesc(user.getId());
+            hasDocs = !docs.isEmpty();
+        }
+
+        // 2. Guardar como Lead con estatus inteligente
         Lead lead = Lead.builder()
                 .fullName(request.getFullName())
                 .phone(request.getPhone())
@@ -102,13 +119,11 @@ public class PublicSiteController {
                 .branch("ORIZABA_BARRIO_NUEVO")
                 .serviceOfInterest("COTIZADOR_SEGUROS_" + request.getInsuranceType())
                 .notes("Cotización calculada: $" + basePremium + " MXN para edad: " + request.getAge())
-                .status("NUEVO")
+                .status(hasDocs ? "DOCUMENTOS_RECIBIDOS" : "NUEVO")
                 .build();
         leadRepository.save(lead);
 
-        Map<String, Object> userResult = ensureUserAccountExists(request.getFullName(), request.getPhone(), request.getEmail());
-        boolean isExistingUser = (boolean) userResult.getOrDefault("isExistingUser", false);
-
+        // 3. Notificación por Correo
         try {
             emailService.sendInsuranceQuoteEmail(
                     request.getEmail(),
@@ -137,6 +152,18 @@ public class PublicSiteController {
 
     @PostMapping("/leads")
     public ResponseEntity<Map<String, Object>> captureLead(@Valid @RequestBody LeadCaptureRequest request) {
+        // 1. Verificar o crear la cuenta B2C
+        Map<String, Object> userResult = ensureUserAccountExists(request.getFullName(), request.getPhone(), request.getEmail());
+        boolean isExistingUser = (boolean) userResult.getOrDefault("isExistingUser", false);
+        User user = (User) userResult.get("user");
+
+        boolean hasDocs = false;
+        if (user != null) {
+            List<Document> docs = documentRepository.findByUserIdOrderByUploadedAtDesc(user.getId());
+            hasDocs = !docs.isEmpty();
+        }
+
+        // 2. Guardar como Lead con estatus inteligente
         Lead lead = Lead.builder()
                 .fullName(request.getFullName())
                 .phone(request.getPhone())
@@ -144,14 +171,12 @@ public class PublicSiteController {
                 .branch(request.getBranch())
                 .serviceOfInterest(request.getServiceOfInterest())
                 .notes(request.getNotes())
-                .status("NUEVO")
+                .status(hasDocs ? "DOCUMENTOS_RECIBIDOS" : "NUEVO")
                 .build();
 
         leadRepository.save(lead);
 
-        Map<String, Object> userResult = ensureUserAccountExists(request.getFullName(), request.getPhone(), request.getEmail());
-        boolean isExistingUser = (boolean) userResult.getOrDefault("isExistingUser", false);
-
+        // 3. Notificación por Correo
         try {
             emailService.sendLeadNotificationEmail(
                     request.getEmail(),
@@ -184,9 +209,15 @@ public class PublicSiteController {
         if (phone == null || phone.isBlank()) return Map.of("isExistingUser", false);
         String cleanPhone = phone.replaceAll("\\D", "");
 
-        if (userRepository.existsByPhone(cleanPhone) || (email != null && !email.isBlank() && userRepository.existsByEmail(email.trim()))) {
-            System.out.println(">>> USUARIO EXISTENTE DETECTADO EN MYSQL - Se conserva contraseña original intacta para: " + cleanPhone + " <<<");
-            return Map.of("isExistingUser", true);
+        User existingUser = userRepository.findByPhone(cleanPhone)
+                .orElseGet(() -> (email != null && !email.isBlank()) ? userRepository.findByEmail(email.trim()).orElse(null) : null);
+
+        if (existingUser != null) {
+            System.out.println(">>> USUARIO EXISTENTE DETECTADO EN MYSQL - USER ID: " + existingUser.getId() + " <<<");
+            Map<String, Object> map = new HashMap<>();
+            map.put("isExistingUser", true);
+            map.put("user", existingUser);
+            return map;
         }
 
         String userEmail = (email != null && !email.isBlank()) ? email.trim() : cleanPhone + "@gatsa.com.mx";
@@ -202,7 +233,10 @@ public class PublicSiteController {
         User saved = userRepository.save(newClient);
         System.out.println(">>> NUEVA CUENTA B2C CREADA EN MYSQL - USER ID: " + saved.getId() + " | Nombre: " + saved.getFullName() + " <<<");
 
-        return Map.of("isExistingUser", false, "user", saved);
+        Map<String, Object> map = new HashMap<>();
+        map.put("isExistingUser", false);
+        map.put("user", saved);
+        return map;
     }
 
     @GetMapping("/leads")
