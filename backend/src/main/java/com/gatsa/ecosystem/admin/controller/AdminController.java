@@ -56,9 +56,34 @@ public class AdminController {
     private EmailService emailService;
 
     @GetMapping("/leads")
-    public ResponseEntity<List<Lead>> getAllLeads() {
-        List<Lead> leads = leadRepository.findAll();
-        for (Lead l : leads) {
+    public ResponseEntity<org.springframework.data.domain.Page<Lead>> getAllLeads(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "15") int size,
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "ALL") String branch) {
+
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+                page, size, org.springframework.data.domain.Sort.by("createdAt").descending()
+        );
+
+        org.springframework.data.domain.Page<Lead> leadPage;
+
+        boolean hasSearch = search != null && !search.isBlank();
+        boolean hasBranch = branch != null && !"ALL".equalsIgnoreCase(branch);
+
+        String cleanSearch = hasSearch ? search.replaceAll("GATSA-2026-", "").trim() : "";
+
+        if (hasSearch && hasBranch) {
+            leadPage = leadRepository.searchLeadsByBranch(branch, cleanSearch, pageable);
+        } else if (hasSearch) {
+            leadPage = leadRepository.searchLeads(cleanSearch, pageable);
+        } else if (hasBranch) {
+            leadPage = leadRepository.findByBranch(branch, pageable);
+        } else {
+            leadPage = leadRepository.findAll(pageable);
+        }
+
+        for (Lead l : leadPage.getContent()) {
             String cleanPhone = l.getPhone() != null ? l.getPhone().replaceAll("\\D", "") : "";
             User u = userRepository.findByPhone(cleanPhone)
                     .orElseGet(() -> (l.getEmail() != null && !l.getEmail().isBlank()) ? userRepository.findByEmail(l.getEmail().trim()).orElse(null) : null);
@@ -75,7 +100,8 @@ public class AdminController {
 
             l.setStatus(normalizeStatusByService(l.getServiceOfInterest(), l.getStatus()));
         }
-        return ResponseEntity.ok(leads);
+
+        return ResponseEntity.ok(leadPage);
     }
 
     @PostMapping("/leads/{id}/status")
@@ -184,15 +210,33 @@ public class AdminController {
     }
 
     @GetMapping("/documents")
-    public ResponseEntity<List<Map<String, Object>>> getAllDocumentsGroupedByClient() {
-        List<User> clients = userRepository.findAll();
-        List<Map<String, Object>> result = new ArrayList<>();
+    public ResponseEntity<org.springframework.data.domain.Page<Map<String, Object>>> getAllDocumentsGroupedByClient(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "15") int size,
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "ALL") String branch) {
 
-        for (User client : clients) {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
+        org.springframework.data.domain.Page<User> clientPage = userRepository.findAll(pageable);
+
+        List<Map<String, Object>> resultList = new ArrayList<>();
+
+        for (User client : clientPage.getContent()) {
             List<Document> userDocs = documentRepository.findByUserIdOrderByUploadedAtDesc(client.getId());
             List<Lead> clientLeads = leadRepository.findByPhoneOrEmailOrderByCreatedAtDesc(client.getPhone(), client.getEmail());
 
             if (userDocs.isEmpty() && clientLeads.isEmpty()) continue;
+
+            // Filtro por búsqueda o sucursal si aplica
+            boolean matchesSearch = search.isBlank() || 
+                    client.getFullName().toLowerCase().contains(search.toLowerCase()) ||
+                    (client.getPhone() != null && client.getPhone().contains(search)) ||
+                    (client.getEmail() != null && client.getEmail().toLowerCase().contains(search.toLowerCase()));
+
+            boolean matchesBranch = "ALL".equalsIgnoreCase(branch) || 
+                    clientLeads.stream().anyMatch(l -> branch.equalsIgnoreCase(l.getBranch()));
+
+            if (!matchesSearch || !matchesBranch) continue;
 
             Map<String, Object> clientGroup = new HashMap<>();
             clientGroup.put("userId", client.getId());
@@ -255,10 +299,14 @@ public class AdminController {
             }
 
             clientGroup.put("procedures", leadItems);
-            result.add(clientGroup);
+            resultList.add(clientGroup);
         }
 
-        return ResponseEntity.ok(result);
+        org.springframework.data.domain.Page<Map<String, Object>> resultPage = new org.springframework.data.domain.PageImpl<>(
+                resultList, pageable, clientPage.getTotalElements()
+        );
+
+        return ResponseEntity.ok(resultPage);
     }
 
     private int calculateStepNumber(String status) {

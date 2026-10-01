@@ -79,11 +79,15 @@ export default function AdminDashboardPage() {
   const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
   const [expandedClientKeys, setExpandedClientKeys] = useState<Record<string, boolean>>({});
 
-  // PAGINACIÓN OPCIÓN A
+  // PAGINACIÓN OPCIÓN A (SERVER-SIDE)
   const [leadPage, setLeadPage] = useState<number>(1);
+  const [totalLeadPages, setTotalLeadPages] = useState<number>(1);
+  const [totalLeadsCount, setTotalLeadsCount] = useState<number>(0);
   const leadItemsPerPage = 15;
 
   const [docPage, setDocPage] = useState<number>(1);
+  const [totalDocPages, setTotalDocPages] = useState<number>(1);
+  const [totalDocsCount, setTotalDocsCount] = useState<number>(0);
   const docItemsPerPage = 15;
 
   const [adminEmail, setAdminEmail] = useState<string>('ing.dazaeev@gmail.com, oswaldonoealexa@gmail.com');
@@ -112,7 +116,7 @@ export default function AdminDashboardPage() {
       setLoading(false);
       setAccessDenied(true);
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, leadPage, docPage, searchTerm, branchFilter]);
 
   useEffect(() => {
     setLeadPage(1);
@@ -124,12 +128,41 @@ export default function AdminDashboardPage() {
     setAccessDenied(false);
     try {
       const [leadsResp, docsResp, configResp] = await Promise.all([
-        api.get('/admin/leads'),
-        api.get('/admin/documents'),
-        api.get('/admin/config')
+        api.get('/admin/leads', {
+          params: {
+            page: leadPage - 1,
+            size: leadItemsPerPage,
+            search: searchTerm,
+            branch: branchFilter,
+          },
+        }),
+        api.get('/admin/documents', {
+          params: {
+            page: docPage - 1,
+            size: docItemsPerPage,
+            search: searchTerm,
+            branch: branchFilter,
+          },
+        }),
+        api.get('/admin/config'),
       ]);
-      setLeads(leadsResp.data);
-      setClientGroups(docsResp.data);
+
+      if (leadsResp.data && leadsResp.data.content) {
+        setLeads(leadsResp.data.content);
+        setTotalLeadPages(leadsResp.data.totalPages || 1);
+        setTotalLeadsCount(leadsResp.data.totalElements || 0);
+      } else {
+        setLeads(Array.isArray(leadsResp.data) ? leadsResp.data : []);
+      }
+
+      if (docsResp.data && docsResp.data.content) {
+        setClientGroups(docsResp.data.content);
+        setTotalDocPages(docsResp.data.totalPages || 1);
+        setTotalDocsCount(docsResp.data.totalElements || 0);
+      } else {
+        setClientGroups(Array.isArray(docsResp.data) ? docsResp.data : []);
+      }
+
       if (configResp.data && configResp.data.adminEmail) {
         setAdminEmail(configResp.data.adminEmail);
       }
@@ -339,13 +372,7 @@ export default function AdminDashboardPage() {
     return 'bg-sky-50 text-sky-800 border-sky-200';
   };
 
-  const filteredLeads = leads.filter((l) => {
-    const matchesSearch = l.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          l.phone.includes(searchTerm) ||
-                          l.serviceOfInterest.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesBranch = branchFilter === 'ALL' || l.branch === branchFilter;
-    return matchesSearch && matchesBranch;
-  });
+  const filteredLeads = leads;
 
   const groupedLeadsMap: Record<string, GroupedLeadClient> = {};
   filteredLeads.forEach((lead) => {
@@ -368,30 +395,11 @@ export default function AdminDashboardPage() {
 
   const groupedLeadsList = Object.values(groupedLeadsMap);
 
-  const totalLeadPages = Math.ceil(filteredLeads.length / leadItemsPerPage) || 1;
-  const paginatedLeads = filteredLeads.slice((leadPage - 1) * leadItemsPerPage, leadPage * leadItemsPerPage);
+  const paginatedLeads = filteredLeads;
+  const paginatedGroupedLeads = groupedLeadsList;
 
-  const totalGroupedPages = Math.ceil(groupedLeadsList.length / leadItemsPerPage) || 1;
-  const paginatedGroupedLeads = groupedLeadsList.slice((leadPage - 1) * leadItemsPerPage, leadPage * leadItemsPerPage);
-
-  const filteredClientGroups = clientGroups.filter((group) => {
-    const term = searchTerm.toLowerCase();
-    const matchesClient = group.clientName.toLowerCase().includes(term) ||
-                          group.clientPhone.includes(term) ||
-                          group.clientEmail.toLowerCase().includes(term);
-    
-    const matchesProcedure = group.procedures.some(p => 
-      p.procedureId.toLowerCase().includes(term) ||
-      p.serviceOfInterest.toLowerCase().includes(term)
-    );
-
-    const matchesBranch = branchFilter === 'ALL' || group.procedures.some(p => p.branch === branchFilter);
-
-    return (matchesClient || matchesProcedure) && matchesBranch;
-  });
-
-  const totalDocPages = Math.ceil(filteredClientGroups.length / docItemsPerPage) || 1;
-  const paginatedClientGroups = filteredClientGroups.slice((docPage - 1) * docItemsPerPage, docPage * docItemsPerPage);
+  const filteredClientGroups = clientGroups;
+  const paginatedClientGroups = clientGroups;
 
   if (!isAuthenticated || user?.role !== 'ROLE_ADMIN' || accessDenied) {
     return (
@@ -516,8 +524,8 @@ export default function AdminDashboardPage() {
               </h2>
               <span className="text-xs text-slate-500 font-mono">
                 {viewMode === 'grouped' 
-                  ? `Mostrando ${groupedLeadsList.length > 0 ? (leadPage - 1) * leadItemsPerPage + 1 : 0} - ${Math.min(leadPage * leadItemsPerPage, groupedLeadsList.length)} de ${groupedLeadsList.length} cliente(s)`
-                  : `Mostrando ${filteredLeads.length > 0 ? (leadPage - 1) * leadItemsPerPage + 1 : 0} - ${Math.min(leadPage * leadItemsPerPage, filteredLeads.length)} de ${filteredLeads.length} solicitud(es)`}
+                  ? `Mostrando ${groupedLeadsList.length > 0 ? (leadPage - 1) * leadItemsPerPage + 1 : 0} - ${Math.min(leadPage * leadItemsPerPage, totalLeadsCount)} de ${totalLeadsCount} registro(s)`
+                  : `Mostrando ${filteredLeads.length > 0 ? (leadPage - 1) * leadItemsPerPage + 1 : 0} - ${Math.min(leadPage * leadItemsPerPage, totalLeadsCount)} de ${totalLeadsCount} solicitud(es)`}
               </span>
             </div>
 
@@ -648,7 +656,7 @@ export default function AdminDashboardPage() {
                 {/* CONTROL DE NAVEGACIÓN PAGINACIÓN LEADS */}
                 <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
                   <span className="text-slate-500 font-medium">
-                    Página <strong>{leadPage}</strong> de <strong>{totalGroupedPages}</strong>
+                    Página <strong>{leadPage}</strong> de <strong>{totalLeadPages}</strong>
                   </span>
                   <div className="flex gap-2">
                     <button
@@ -661,8 +669,8 @@ export default function AdminDashboardPage() {
                     </button>
                     <button
                       type="button"
-                      disabled={leadPage === totalGroupedPages}
-                      onClick={() => setLeadPage(p => Math.min(totalGroupedPages, p + 1))}
+                      disabled={leadPage === totalLeadPages}
+                      onClick={() => setLeadPage(p => Math.min(totalLeadPages, p + 1))}
                       className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white font-bold rounded-lg transition flex items-center gap-1 shadow-xs cursor-pointer disabled:cursor-not-allowed"
                     >
                       Siguiente <ChevronRight className="w-4 h-4" />
