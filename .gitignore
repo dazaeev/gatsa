@@ -1,0 +1,21 @@
+# Root gitignore
+.DS_Store
+*.log
+*.tmp
+*.bak
+
+# Backend
+backend/target/
+backend/.classpath
+backend/.project
+backend/.settings/
+backend/.factorypath
+backend/uploads/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/dist/
+frontend/.vercel
+frontend/*.tsbuildinfo
