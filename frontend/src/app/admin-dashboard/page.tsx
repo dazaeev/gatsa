@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ShieldAlert, Users, Phone, Search, FileText, Settings, Save, CheckCircle2, Lock, LogIn, ArrowRight, Eye, Download, X, FileCheck2, Clock, Layers, Building2, Mail, Edit3, Trash2, RefreshCcw, Award } from 'lucide-react';
+import { ShieldAlert, Users, Phone, Search, FileText, Settings, Save, CheckCircle2, Lock, LogIn, ArrowRight, Eye, Download, X, FileCheck2, Clock, Layers, Building2, Mail, Edit3, ChevronLeft, ChevronRight, Award, RefreshCcw, Trash2, UserCheck, ChevronDown, ChevronUp, LayoutList, User } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 
@@ -27,14 +27,6 @@ interface DocMapItem {
   uploadedAt: string;
 }
 
-interface DeliverableItem {
-  id: number;
-  stepNumber: number;
-  status: string;
-  adminNote: string;
-  fileName: string;
-}
-
 interface ProcedureAdminItem {
   leadId: number;
   procedureId: string;
@@ -44,7 +36,13 @@ interface ProcedureAdminItem {
   adminNote?: string;
   adminAttachmentFileName?: string;
   documents: DocMapItem[];
-  deliverables?: DeliverableItem[];
+  deliverables?: {
+    id: number;
+    stepNumber: number;
+    status: string;
+    adminNote: string;
+    fileName: string;
+  }[];
 }
 
 interface ClientDocumentGroup {
@@ -53,6 +51,17 @@ interface ClientDocumentGroup {
   clientPhone: string;
   clientEmail: string;
   procedures: ProcedureAdminItem[];
+}
+
+interface GroupedLeadClient {
+  clientKey: string;
+  fullName: string;
+  phone: string;
+  email: string;
+  branch: string;
+  totalRequests: number;
+  latestLead: Lead;
+  leads: Lead[];
 }
 
 export default function AdminDashboardPage() {
@@ -66,11 +75,22 @@ export default function AdminDashboardPage() {
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
   const [activeTab, setActiveTab] = useState<'leads' | 'documents' | 'config'>('leads');
 
-  const [adminEmail, setAdminEmail] = useState<string>('ing.dazaeev@gmail.com');
+  // MODO VISTA: 'grouped' (Agrupada por Cliente) o 'flat' (Lista de todos los folios)
+  const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
+  const [expandedClientKeys, setExpandedClientKeys] = useState<Record<string, boolean>>({});
+
+  // PAGINACIÓN OPCIÓN A
+  const [leadPage, setLeadPage] = useState<number>(1);
+  const leadItemsPerPage = 15;
+
+  const [docPage, setDocPage] = useState<number>(1);
+  const docItemsPerPage = 15;
+
+  const [adminEmail, setAdminEmail] = useState<string>('ing.dazaeev@gmail.com, oswaldonoealexa@gmail.com');
   const [configSuccess, setConfigSuccess] = useState<boolean>(false);
 
   // Viewer Modal State
-  const [selectedDocInfo, setSelectedDocInfo] = useState<{ id: number; fileName: string; docType: string; clientName: string; isDeliverable?: boolean } | null>(null);
+  const [selectedDocInfo, setSelectedDocInfo] = useState<{ id: number; fileName: string; docType: string; clientName: string } | null>(null);
   const [viewModalOpen, setViewModalOpen] = useState<boolean>(false);
   const [docBlobUrl, setDocBlobUrl] = useState<string | null>(null);
   const [loadingDoc, setLoadingDoc] = useState<boolean>(false);
@@ -94,6 +114,11 @@ export default function AdminDashboardPage() {
     }
   }, [isAuthenticated, user]);
 
+  useEffect(() => {
+    setLeadPage(1);
+    setDocPage(1);
+  }, [searchTerm, branchFilter, viewMode]);
+
   const fetchAdminData = async () => {
     setLoading(true);
     setAccessDenied(false);
@@ -115,6 +140,13 @@ export default function AdminDashboardPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleClientExpansion = (key: string) => {
+    setExpandedClientKeys(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
   };
 
   const suggestNextLogicalStatus = (service: string, rawStatus: string) => {
@@ -185,7 +217,7 @@ export default function AdminDashboardPage() {
   };
 
   const handleInspectDocument = async (docId: number, fileName: string, docType: string, clientName: string) => {
-    setSelectedDocInfo({ id: docId, fileName, docType, clientName, isDeliverable: false });
+    setSelectedDocInfo({ id: docId, fileName, docType, clientName });
     setViewModalOpen(true);
     setLoadingDoc(true);
     setDocBlobUrl(null);
@@ -206,7 +238,7 @@ export default function AdminDashboardPage() {
   };
 
   const handleInspectDeliverable = async (leadId: number, fileName: string, clientName: string) => {
-    setSelectedDocInfo({ id: leadId, fileName, docType: 'Entregable Oficial GATSA', clientName, isDeliverable: true });
+    setSelectedDocInfo({ id: leadId, fileName, docType: 'Entregable Oficial GATSA', clientName });
     setViewModalOpen(true);
     setLoadingDoc(true);
     setDocBlobUrl(null);
@@ -315,6 +347,33 @@ export default function AdminDashboardPage() {
     return matchesSearch && matchesBranch;
   });
 
+  const groupedLeadsMap: Record<string, GroupedLeadClient> = {};
+  filteredLeads.forEach((lead) => {
+    const key = lead.phone ? lead.phone.replaceAll(/\D/g, '') : lead.email.toLowerCase();
+    if (!groupedLeadsMap[key]) {
+      groupedLeadsMap[key] = {
+        clientKey: key,
+        fullName: lead.fullName,
+        phone: lead.phone,
+        email: lead.email,
+        branch: lead.branch,
+        totalRequests: 0,
+        latestLead: lead,
+        leads: [],
+      };
+    }
+    groupedLeadsMap[key].leads.push(lead);
+    groupedLeadsMap[key].totalRequests += 1;
+  });
+
+  const groupedLeadsList = Object.values(groupedLeadsMap);
+
+  const totalLeadPages = Math.ceil(filteredLeads.length / leadItemsPerPage) || 1;
+  const paginatedLeads = filteredLeads.slice((leadPage - 1) * leadItemsPerPage, leadPage * leadItemsPerPage);
+
+  const totalGroupedPages = Math.ceil(groupedLeadsList.length / leadItemsPerPage) || 1;
+  const paginatedGroupedLeads = groupedLeadsList.slice((leadPage - 1) * leadItemsPerPage, leadPage * leadItemsPerPage);
+
   const filteredClientGroups = clientGroups.filter((group) => {
     const term = searchTerm.toLowerCase();
     const matchesClient = group.clientName.toLowerCase().includes(term) ||
@@ -330,6 +389,9 @@ export default function AdminDashboardPage() {
 
     return (matchesClient || matchesProcedure) && matchesBranch;
   });
+
+  const totalDocPages = Math.ceil(filteredClientGroups.length / docItemsPerPage) || 1;
+  const paginatedClientGroups = filteredClientGroups.slice((docPage - 1) * docItemsPerPage, docPage * docItemsPerPage);
 
   if (!isAuthenticated || user?.role !== 'ROLE_ADMIN' || accessDenied) {
     return (
@@ -419,7 +481,7 @@ export default function AdminDashboardPage() {
             activeTab === 'leads' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <Users className="w-4 h-4" /> Solicitudes y Prospectos ({filteredLeads.length})
+          <Users className="w-4 h-4" /> Solicitudes y Prospectos ({groupedLeadsList.length} Clientes)
         </button>
 
         <button
@@ -443,85 +505,283 @@ export default function AdminDashboardPage() {
         </button>
       </div>
 
-      {/* PESTAÑA 1: SOLICITUDES Y LEADS */}
+      {/* PESTAÑA 1: SOLICITUDES Y LEADS CON MODO DE VISTA AGRUPADO O LISTA Y PAGINACIÓN HOMOGÉNEA */}
       {activeTab === 'leads' && (
         <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <Users className="w-5 h-5 text-sky-600" />
-              Bandeja de Contactos Registrados
-            </h2>
-            <span className="text-xs text-slate-500 font-mono">Mostrando {filteredLeads.length} solicitudes</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-sky-600" />
+                Bandeja de Contactos Registrados
+              </h2>
+              <span className="text-xs text-slate-500 font-mono">
+                {viewMode === 'grouped' 
+                  ? `Mostrando ${groupedLeadsList.length > 0 ? (leadPage - 1) * leadItemsPerPage + 1 : 0} - ${Math.min(leadPage * leadItemsPerPage, groupedLeadsList.length)} de ${groupedLeadsList.length} cliente(s)`
+                  : `Mostrando ${filteredLeads.length > 0 ? (leadPage - 1) * leadItemsPerPage + 1 : 0} - ${Math.min(leadPage * leadItemsPerPage, filteredLeads.length)} de ${filteredLeads.length} solicitud(es)`}
+              </span>
+            </div>
+
+            {/* Toggle de Modo de Vista */}
+            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setViewMode('grouped')}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                  viewMode === 'grouped' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" /> Agrupar por Cliente
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('flat')}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                  viewMode === 'flat' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LayoutList className="w-3.5 h-3.5" /> Lista Completa Folios
+              </button>
+            </div>
           </div>
 
           {loading ? (
             <div className="text-center py-8 text-slate-500">Cargando bandeja de solicitudes...</div>
-          ) : filteredLeads.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700 border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider bg-slate-50">
-                    <th className="py-3 px-4">Folio / Cliente</th>
-                    <th className="py-3 px-4">Contacto</th>
-                    <th className="py-3 px-4">Servicio / Interés</th>
-                    <th className="py-3 px-4">Sucursal</th>
-                    <th className="py-3 px-4">Estatus Actual</th>
-                    <th className="py-3 px-4 text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredLeads.map((lead) => (
-                    <tr key={lead.id} className="hover:bg-slate-50 transition">
-                      <td className="py-3.5 px-4 font-bold text-slate-900">
-                        <span className="text-[10px] text-sky-600 font-mono block">GATSA-2026-{1000 + lead.id}</span>
-                        {lead.fullName}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-sky-700">
-                        {lead.phone}
-                        <span className="block text-[10px] text-slate-500 font-sans">{lead.email || 'Sin correo'}</span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px] text-slate-800 font-semibold">
-                          {lead.serviceOfInterest}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600">{lead.branch}</td>
-                      <td className="py-3.5 px-4">
-                        <span className={`px-2.5 py-1 border rounded-md font-bold text-[10px] ${getStatusBadgeStyle(lead.status)}`}>
-                          {lead.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-right space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status)}
-                          className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded font-bold transition inline-flex items-center gap-1 shadow"
-                        >
-                          <Edit3 className="w-3 h-3" /> Dictaminar
-                        </button>
-                        <a
-                          href={`https://wa.me/52${lead.phone.replaceAll(/\D/g, '')}?text=Hola%20${encodeURIComponent(lead.fullName)},%20te%20contactamos%20de%20GATSA%20respecto%20a%20tu%20tr%C3%A1mite%20GATSA-2026-${1000 + lead.id}.`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold transition inline-flex items-center gap-1"
-                        >
-                          <Phone className="w-3 h-3" /> Contactar
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          ) : viewMode === 'grouped' ? (
+            paginatedGroupedLeads.length > 0 ? (
+              <div className="space-y-4">
+                <div className="space-y-4">
+                  {paginatedGroupedLeads.map((group) => {
+                    const isExpanded = !!expandedClientKeys[group.clientKey];
+                    return (
+                      <div key={group.clientKey} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-sky-600 text-white rounded-xl font-bold">
+                              <User className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-black text-slate-900 text-base">{group.fullName}</h3>
+                                <span className="px-2 py-0.5 bg-sky-100 text-sky-800 border border-sky-300 rounded-full font-bold text-[10px]">
+                                  {group.totalRequests} {group.totalRequests === 1 ? 'Solicitud' : 'Solicitudes'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 font-mono mt-0.5">
+                                Tel: <strong className="text-slate-700">{group.phone}</strong> • Correo: <strong className="text-slate-700">{group.email}</strong>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={`https://wa.me/52${group.phone.replaceAll(/\D/g, '')}?text=Hola%20${encodeURIComponent(group.fullName)},%20te%20contactamos%20de%20GATSA.`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                            >
+                              <Phone className="w-3.5 h-3.5" /> WhatsApp Cliente
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleClientExpansion(group.clientKey)}
+                              className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                            >
+                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              <span>{isExpanded ? 'Ocultar Folios' : 'Ver Folios'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="pt-3 border-t border-slate-200 space-y-2 animate-in fade-in duration-150">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                              Historial de Solicitudes Registradas ({group.leads.length}):
+                            </span>
+                            <div className="divide-y divide-slate-200 bg-white rounded-xl border border-slate-200 overflow-hidden">
+                              {group.leads.map((lead) => (
+                                <div key={lead.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 text-xs">
+                                  <div className="space-y-0.5">
+                                    <span className="font-mono font-bold text-sky-600 text-xs block">
+                                      GATSA-2026-{1000 + lead.id}
+                                    </span>
+                                    <span className="font-bold text-slate-800">{lead.serviceOfInterest}</span>
+                                    <span className="text-slate-500 block text-[11px]">Sucursal: {lead.branch}</span>
+                                  </div>
+
+                                  <div className="flex items-center gap-3">
+                                    <span className={`px-2.5 py-1 border rounded-md font-bold text-[10px] ${getStatusBadgeStyle(lead.status)}`}>
+                                      {lead.status}
+                                    </span>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (lead.status === 'CONCLUIDO') {
+                                          if (confirm(`El trámite GATSA-2026-${1000 + lead.id} ya está CONCLUIDO. ¿Deseas reabrir el dictamen?`)) {
+                                            openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status);
+                                          }
+                                        } else {
+                                          openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status);
+                                        }
+                                      }}
+                                      className={`px-3 py-1 rounded font-bold transition text-[11px] flex items-center gap-1 shadow-xs ${
+                                        lead.status === 'CONCLUIDO' 
+                                          ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300' 
+                                          : 'bg-sky-600 hover:bg-sky-700 text-white'
+                                      }`}
+                                    >
+                                      {lead.status === 'CONCLUIDO' ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Edit3 className="w-3 h-3" />}
+                                      {lead.status === 'CONCLUIDO' ? 'Concluido' : 'Dictaminar'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* CONTROL DE NAVEGACIÓN PAGINACIÓN LEADS */}
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">
+                    Página <strong>{leadPage}</strong> de <strong>{totalGroupedPages}</strong>
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={leadPage === 1}
+                      onClick={() => setLeadPage(p => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={leadPage === totalGroupedPages}
+                      onClick={() => setLeadPage(p => Math.min(totalGroupedPages, p + 1))}
+                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white font-bold rounded-lg transition flex items-center gap-1 shadow-xs cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      Siguiente <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-slate-500 text-xs">
+                No se encontraron contactos agrupados.
+              </div>
+            )
           ) : (
-            <div className="text-center py-12 text-slate-500 text-xs">
-              No se encontraron solicitudes que coincidan con la búsqueda o filtro.
-            </div>
+            paginatedLeads.length > 0 ? (
+              <div className="space-y-4">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700 border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider bg-slate-50">
+                        <th className="py-3 px-4">Folio / Cliente</th>
+                        <th className="py-3 px-4">Contacto</th>
+                        <th className="py-3 px-4">Servicio / Interés</th>
+                        <th className="py-3 px-4">Sucursal</th>
+                        <th className="py-3 px-4">Estatus Actual</th>
+                        <th className="py-3 px-4 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {paginatedLeads.map((lead) => (
+                        <tr key={lead.id} className="hover:bg-slate-50 transition">
+                          <td className="py-3.5 px-4 font-bold text-slate-900">
+                            <span className="text-[10px] text-sky-600 font-mono block">GATSA-2026-{1000 + lead.id}</span>
+                            {lead.fullName}
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-sky-700">
+                            {lead.phone}
+                            <span className="block text-[10px] text-slate-500 font-sans">{lead.email || 'Sin correo'}</span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px] text-slate-800 font-semibold">
+                              {lead.serviceOfInterest}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-600">{lead.branch}</td>
+                          <td className="py-3.5 px-4">
+                            <span className={`px-2.5 py-1 border rounded-md font-bold text-[10px] ${getStatusBadgeStyle(lead.status)}`}>
+                              {lead.status}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-right space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (lead.status === 'CONCLUIDO') {
+                                  if (confirm(`El trámite GATSA-2026-${1000 + lead.id} ya está CONCLUIDO. ¿Deseas reabrir el dictamen?`)) {
+                                    openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status);
+                                  }
+                                } else {
+                                  openDictamenModal(lead.id, `GATSA-2026-${1000 + lead.id}`, lead.serviceOfInterest, lead.status);
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded font-bold transition inline-flex items-center gap-1 shadow ${
+                                lead.status === 'CONCLUIDO'
+                                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                                  : 'bg-sky-600 hover:bg-sky-700 text-white'
+                              }`}
+                            >
+                              {lead.status === 'CONCLUIDO' ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Edit3 className="w-3 h-3" />}
+                              {lead.status === 'CONCLUIDO' ? 'Concluido' : 'Dictaminar'}
+                            </button>
+                            <a
+                              href={`https://wa.me/52${lead.phone.replaceAll(/\D/g, '')}?text=Hola%20${encodeURIComponent(lead.fullName)},%20te%20contactamos%20de%20GATSA%20respecto%20a%20tu%20tr%C3%A1mite%20GATSA-2026-${1000 + lead.id}.`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold transition inline-flex items-center gap-1"
+                            >
+                              <Phone className="w-3 h-3" /> Contactar
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">
+                    Página <strong>{leadPage}</strong> de <strong>{totalLeadPages}</strong>
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={leadPage === 1}
+                      onClick={() => setLeadPage(p => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={leadPage === totalLeadPages}
+                      onClick={() => setLeadPage(p => Math.min(totalLeadPages, p + 1))}
+                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white font-bold rounded-lg transition flex items-center gap-1 shadow-xs cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      Siguiente <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-slate-500 text-xs">
+                No se encontraron solicitudes que coincidan con la búsqueda o filtro.
+              </div>
+            )
           )}
         </div>
       )}
 
-      {/* PESTAÑA 2: DOCUMENTOS DEL CLIENTE Y ENTREGABLES EMITIDOS POR ADMIN */}
+      {/* PESTAÑA 2: DOCUMENTOS ORGANIZADOS POR CLIENTE Y TRÁMITE CON PAGINACIÓN HOMOGÉNEA */}
       {activeTab === 'documents' && (
         <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -530,159 +790,213 @@ export default function AdminDashboardPage() {
               Expedientes de Clientes y Control de Archivos
             </h2>
             <span className="text-xs text-slate-500 font-mono">
-              Mostrando {filteredClientGroups.length} cliente(s) con expediente
+              Mostrando {Math.min((docPage - 1) * docItemsPerPage + 1, filteredClientGroups.length)} - {Math.min(docPage * docItemsPerPage, filteredClientGroups.length)} de {filteredClientGroups.length} cliente(s)
             </span>
           </div>
 
           <div className="space-y-6">
-            {filteredClientGroups && filteredClientGroups.length > 0 ? (
-              filteredClientGroups.map((group) => (
-                <div key={group.userId} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4 shadow-sm">
-                  
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-sky-600 font-mono">
-                        CLIENTE ID: #{group.userId}
-                      </span>
-                      <h3 className="font-black text-slate-900 text-lg">{group.clientName}</h3>
-                      <p className="text-xs text-slate-500 font-mono">
-                        Tel: <strong className="text-slate-700">{group.clientPhone}</strong> • Correo: <strong className="text-slate-700">{group.clientEmail}</strong>
-                      </p>
+            {paginatedClientGroups && paginatedClientGroups.length > 0 ? (
+              <div className="space-y-6">
+                {paginatedClientGroups.map((group) => (
+                  <div key={group.userId} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4 shadow-sm">
+                    
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-sky-600 font-mono">
+                          CLIENTE ID: #{group.userId}
+                        </span>
+                        <h3 className="font-black text-slate-900 text-lg">{group.clientName}</h3>
+                        <p className="text-xs text-slate-500 font-mono">
+                          Tel: <strong className="text-slate-700">{group.clientPhone}</strong> • Correo: <strong className="text-slate-700">{group.clientEmail}</strong>
+                        </p>
+                      </div>
+
+                      <a
+                        href={`https://wa.me/52${group.clientPhone.replaceAll(/\D/g, '')}?text=Hola%20${encodeURIComponent(group.clientName)},%20te%20contactamos%20de%20GATSA%20respecto%20a%20tus%20documentos.`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow transition inline-flex items-center gap-1.5 w-fit"
+                      >
+                        <Phone className="w-3.5 h-3.5" /> WhatsApp Cliente
+                      </a>
                     </div>
 
-                    <a
-                      href={`https://wa.me/52${group.clientPhone.replaceAll(/\D/g, '')}?text=Hola%20${encodeURIComponent(group.clientName)},%20te%20contactamos%20de%20GATSA%20respecto%20a%20tus%20documentos.`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow transition inline-flex items-center gap-1.5 w-fit"
-                    >
-                      <Phone className="w-3.5 h-3.5" /> WhatsApp Cliente
-                    </a>
-                  </div>
+                    <div className="space-y-4 pt-1">
+                      {group.procedures.map((proc) => (
+                        <div key={proc.procedureId} className="p-4 bg-white rounded-xl border border-slate-200 space-y-4 shadow-xs">
+                          
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded font-mono font-bold text-xs">
+                                {proc.procedureId}
+                              </span>
+                              <span className="font-bold text-slate-800 text-xs">{proc.serviceOfInterest}</span>
+                            </div>
 
-                  <div className="space-y-4 pt-1">
-                    {group.procedures.map((proc) => (
-                      <div key={proc.procedureId} className="p-4 bg-white rounded-xl border border-slate-200 space-y-4 shadow-xs">
-                        
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded font-mono font-bold text-xs">
-                              {proc.procedureId}
-                            </span>
-                            <span className="font-bold text-slate-800 text-xs">{proc.serviceOfInterest}</span>
-                          </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[11px] text-slate-500 font-semibold">
+                                Sucursal: <strong>{proc.branch}</strong> • Estatus: <strong className="text-sky-700">{proc.status}</strong>
+                              </span>
 
-                          <div className="flex items-center gap-3">
-                            <span className="text-[11px] text-slate-500 font-semibold">
-                              Sucursal: <strong>{proc.branch}</strong> • Estatus: <strong className="text-sky-700">{proc.status}</strong>
-                            </span>
-
-                            {proc.leadId > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => openDictamenModal(proc.leadId, proc.procedureId, proc.serviceOfInterest, proc.status)}
-                                className="px-3 py-1 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded text-[11px] transition shadow-xs flex items-center gap-1"
-                              >
-                                <Edit3 className="w-3 h-3" /> Dictaminar / Adjuntar Entregable
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* SECCIÓN A: DOCUMENTOS RECIBIDOS DEL CLIENTE */}
-                        <div className="space-y-2">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                             Documentos Recibidos del Cliente ({proc.documents ? proc.documents.length : 0})
-                          </span>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {proc.documents && proc.documents.length > 0 ? (
-                              proc.documents.map((doc) => (
-                                <div key={doc.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                                  <div className="flex items-center gap-2 truncate">
-                                    <FileText className="w-4 h-4 text-sky-600 shrink-0" />
-                                    <div className="truncate">
-                                      <span className="font-bold text-slate-900 block truncate">{doc.documentType}</span>
-                                      <span className="text-slate-500 font-mono text-[10px] truncate block">{doc.fileName}</span>
-                                    </div>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleInspectDocument(doc.id, doc.fileName, doc.documentType, group.clientName)}
-                                    className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-[11px] font-bold transition flex items-center gap-1 shrink-0"
-                                  >
-                                    <Eye className="w-3 h-3 text-sky-400" /> Ver
-                                  </button>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="col-span-2 text-slate-400 text-[11px] italic py-1">
-                                Pendiente de adjuntar documentos del cliente.
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* SECCIÓN B: ENTREGABLES OFICIALES EMITIDOS POR EL ADMINISTRADOR */}
-                        <div className="space-y-2 pt-2 border-t border-slate-100">
-                          <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
-                             Entregables Oficiales Emitidos por GATSA ({proc.deliverables ? proc.deliverables.length : 0})
-                          </span>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {proc.deliverables && proc.deliverables.length > 0 ? (
-                              proc.deliverables.map((deliv) => (
-                                <div key={deliv.id} className="p-3 bg-emerald-50/60 rounded-lg border border-emerald-200 flex items-center justify-between text-xs">
-                                  <div className="flex items-center gap-2 truncate">
-                                    <Award className="w-4 h-4 text-emerald-600 shrink-0" />
-                                    <div className="truncate">
-                                      <span className="font-bold text-emerald-950 block truncate">Paso {deliv.stepNumber}: {deliv.status}</span>
-                                      <span className="text-emerald-800 font-mono text-[10px] truncate block">{deliv.fileName}</span>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-1 shrink-0">
+                              {proc.leadId > 0 && (
+                                proc.status === 'CONCLUIDO' ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded font-bold text-[11px] flex items-center gap-1 shadow-xs">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Trámite Concluido
+                                    </span>
                                     <button
                                       type="button"
-                                      onClick={() => handleInspectDeliverable(proc.leadId, deliv.fileName, group.clientName)}
-                                      className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded text-[10px] transition flex items-center gap-1"
+                                      onClick={() => {
+                                        if (confirm(`El trámite ${proc.procedureId} ya está CONCLUIDO. ¿Deseas reabrir el dictamen para modificar estatus o entregable?`)) {
+                                          openDictamenModal(proc.leadId, proc.procedureId, proc.serviceOfInterest, proc.status);
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold rounded text-[10px] transition flex items-center gap-1"
+                                      title="Reabrir dictamen excepcionalmente"
+                                    >
+                                      <Lock className="w-3 h-3 text-slate-500" /> Reabrir
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => openDictamenModal(proc.leadId, proc.procedureId, proc.serviceOfInterest, proc.status)}
+                                    className="px-3 py-1 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded text-[11px] transition shadow-xs flex items-center gap-1"
+                                  >
+                                    <Edit3 className="w-3 h-3" /> Dictaminar / Adjuntar Entregable
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </div>
+
+                          {/* SECCIÓN A: DOCUMENTOS RECIBIDOS DEL CLIENTE */}
+                          <div className="space-y-2">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                              Documentos Recibidos del Cliente ({proc.documents ? proc.documents.length : 0})
+                            </span>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {proc.documents && proc.documents.length > 0 ? (
+                                proc.documents.map((doc) => (
+                                  <div key={doc.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2 truncate">
+                                      <FileText className="w-4 h-4 text-sky-600 shrink-0" />
+                                      <div className="truncate">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-bold text-slate-900 truncate">{doc.documentType}</span>
+                                          {"INE_IDENTIFICACION" === doc.documentType ? (
+                                            <span className="px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded text-[9px] font-bold">Global</span>
+                                          ) : (
+                                            <span className="px-1.5 py-0.2 bg-sky-50 text-sky-700 border border-sky-200 rounded text-[9px] font-bold">Folio</span>
+                                          )}
+                                        </div>
+                                        <span className="text-slate-500 font-mono text-[10px] truncate block">{doc.fileName}</span>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInspectDocument(doc.id, doc.fileName, doc.documentType, group.clientName)}
+                                      className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-[11px] font-bold transition flex items-center gap-1 shrink-0"
                                     >
                                       <Eye className="w-3 h-3 text-sky-400" /> Ver
                                     </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => openDictamenModal(proc.leadId, proc.procedureId, proc.serviceOfInterest, proc.status)}
-                                      className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-800 border border-sky-300 font-bold rounded text-[10px] transition flex items-center gap-1"
-                                    >
-                                      <RefreshCcw className="w-3 h-3" /> Reemplazar
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteDeliverable(deliv.id)}
-                                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded text-[10px] transition flex items-center gap-1"
-                                    >
-                                      <Trash2 className="w-3 h-3 text-rose-600" /> Eliminar
-                                    </button>
                                   </div>
+                                ))
+                              ) : (
+                                <div className="col-span-2 text-slate-400 text-[11px] italic py-1">
+                                  Pendiente de adjuntar documentos del cliente.
                                 </div>
-                              ))
-                            ) : (
-                              <div className="col-span-2 text-slate-400 text-[11px] italic py-1">
-                                No se han emitido archivos entregables (Póliza, Cheque) para este trámite aún. Haz clic en <strong>"Dictaminar"</strong> para adjuntar uno.
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
+
+                          {/* SECCIÓN B: ENTREGABLES OFICIALES EMITIDOS POR EL ADMINISTRADOR */}
+                          <div className="space-y-2 pt-2 border-t border-slate-100">
+                            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+                              Entregables Oficiales Emitidos por GATSA ({proc.deliverables ? proc.deliverables.length : 0})
+                            </span>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {proc.deliverables && proc.deliverables.length > 0 ? (
+                                proc.deliverables.map((deliv) => (
+                                  <div key={deliv.id} className="p-3 bg-emerald-50/60 rounded-lg border border-emerald-200 flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2 truncate">
+                                      <Award className="w-4 h-4 text-emerald-600 shrink-0" />
+                                      <div className="truncate">
+                                        <span className="font-bold text-emerald-950 block truncate">Paso {deliv.stepNumber}: {deliv.status}</span>
+                                        <span className="text-emerald-800 font-mono text-[10px] truncate block">{deliv.fileName}</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInspectDeliverable(proc.leadId, deliv.fileName, group.clientName)}
+                                        className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-[10px] transition flex items-center gap-1"
+                                      >
+                                        <Eye className="w-3 h-3 text-sky-400" /> Ver
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => openDictamenModal(proc.leadId, proc.procedureId, proc.serviceOfInterest, proc.status)}
+                                        className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-800 border border-sky-300 font-bold rounded text-[10px] transition flex items-center gap-1"
+                                      >
+                                        <RefreshCcw className="w-3 h-3" /> Reemplazar
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteDeliverable(deliv.id)}
+                                        className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded text-[10px] transition flex items-center gap-1"
+                                      >
+                                        <Trash2 className="w-3 h-3 text-rose-600" /> Eliminar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="col-span-2 text-slate-400 text-[11px] italic py-1">
+                                  No se han emitido archivos entregables para este trámite. Haz clic en <strong>"Dictaminar / Adjuntar Entregable"</strong> arriba para emitir uno.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
                         </div>
+                      ))}
+                    </div>
 
-                      </div>
-                    ))}
                   </div>
+                ))}
 
+                {/* CONTROL DE PAGINACIÓN EXPEDIENTES */}
+                <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">
+                    Página <strong>{docPage}</strong> de <strong>{totalDocPages}</strong> (Mostrando {paginatedClientGroups.length} clientes)
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={docPage === 1}
+                      onClick={() => setDocPage(p => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={docPage === totalDocPages}
+                      onClick={() => setDocPage(p => Math.min(totalDocPages, p + 1))}
+                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white font-bold rounded-lg transition flex items-center gap-1 shadow-xs cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      Siguiente <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              ))
+              </div>
             ) : (
               <div className="text-center py-12 text-slate-500 text-xs">
                 No se encontraron expedientes que coincidan con la búsqueda o filtro.
@@ -692,7 +1006,7 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* PESTAÑA 3: CONFIGURACIÓN DE NOTIFICACIONES Y SEGURIDAD */}
+      {/* PESTAÑA 3: CONFIGURACIÓN DE NOTIFICACIONES Y SEGURIDAD MULTI-CORREO */}
       {activeTab === 'config' && (
         <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6 max-w-2xl">
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
