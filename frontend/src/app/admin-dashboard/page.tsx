@@ -75,7 +75,16 @@ export default function AdminDashboardPage() {
   const [accessDenied, setAccessDenied] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
-  const [activeTab, setActiveTab] = useState<'leads' | 'documents' | 'config'>('leads');
+  const [activeTab, setActiveTab] = useState<'leads' | 'imss' | 'documents' | 'config'>('leads');
+
+  // Toggle para Acordeón Raw Data
+  const [showRawImssResponse, setShowRawImssResponse] = useState<boolean>(false);
+  const [imssCurp, setImssCurp] = useState<string>('');
+  const [imssTipoCorreo, setImssTipoCorreo] = useState<string>('hotmail');
+  const [imssCookie, setImssCookie] = useState<string>('');
+  const [loadingImss, setLoadingImss] = useState<boolean>(false);
+  const [imssResult, setImssResult] = useState<any>(null);
+  const [imssHistory, setImssHistory] = useState<any[]>([]);
 
   // MODO VISTA: 'grouped' (Agrupada por Cliente) o 'flat' (Lista de todos los folios)
   const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
@@ -114,6 +123,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (isAuthenticated && user?.role === 'ROLE_ADMIN') {
       fetchAdminData();
+      fetchImssHistory();
     } else {
       setLoading(false);
       setAccessDenied(true);
@@ -165,8 +175,9 @@ export default function AdminDashboardPage() {
         setClientGroups(Array.isArray(docsResp.data) ? docsResp.data : []);
       }
 
-      if (configResp.data && configResp.data.adminEmail) {
-        setAdminEmail(configResp.data.adminEmail);
+      if (configResp.data) {
+        if (configResp.data.adminEmail) setAdminEmail(configResp.data.adminEmail);
+        if (configResp.data.imssCookie) setImssCookie(configResp.data.imssCookie);
       }
     } catch (error: any) {
       console.warn('Sesión caducada o token inválido en panel de administración');
@@ -320,11 +331,82 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     try {
       await api.post('/admin/config', { adminEmail });
+      await api.post('/admin/imss/cookie', { cookie: imssCookie });
       setConfigSuccess(true);
       setTimeout(() => setConfigSuccess(false), 3000);
     } catch (err) {
       console.error('Error guardando configuración', err);
       alert('Error guardando la configuración de notificaciones en BD.');
+    }
+  };
+
+  const fetchImssHistory = async () => {
+    try {
+      const resp = await api.get('/admin/imss/history');
+      if (Array.isArray(resp.data)) {
+        setImssHistory(resp.data);
+      }
+    } catch (err) {
+      console.error('Error cargando historial de archivos IMSS', err);
+    }
+  };
+
+  const handleConsultarSemanasImss = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!imssCurp) return;
+    setLoadingImss(true);
+    setImssResult(null);
+
+    try {
+      const resp = await api.post('/admin/imss/consultar-semanas', {
+        curp: imssCurp.toUpperCase().trim(),
+        tipoCorreo: imssTipoCorreo,
+      });
+
+      setImssResult(resp.data);
+      fetchImssHistory();
+
+      // Descarga automática y apertura en visor si fue exitoso
+      if (resp.data && resp.data.pdfFileName) {
+        handleDownloadAndInspectImssPdf(resp.data.pdfFileName, `Reporte Semanas ${resp.data.curp}`);
+      }
+    } catch (err: any) {
+      console.error('Error en consulta IMSS', err);
+      const errMsg = err.response?.data?.message || 'Error al comunicarse con el servicio de Jordan Digital IMSS.';
+      alert(`Error: ${errMsg}`);
+    } finally {
+      setLoadingImss(false);
+    }
+  };
+
+  const handleDownloadAndInspectImssPdf = async (fileName: string, titleName: string) => {
+    setSelectedDocInfo({ id: 99999, fileName, docType: 'Semanas Cotizadas IMSS', clientName: titleName });
+    setViewModalOpen(true);
+    setLoadingDoc(true);
+    setDocBlobUrl(null);
+
+    try {
+      const response = await api.get('/admin/imss/download-pdf', {
+        params: { file: fileName },
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(blob);
+      setDocBlobUrl(blobUrl);
+
+      // Disparar descarga automática en el navegador
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error al descargar y visualizar el PDF del IMSS', err);
+      alert('Error al descargar el archivo PDF del IMSS.');
+    } finally {
+      setLoadingDoc(false);
     }
   };
 
@@ -495,6 +577,16 @@ export default function AdminDashboardPage() {
           }`}
         >
           <Users className="w-4 h-4" /> Solicitudes y Prospectos ({groupedLeadsList.length} Clientes)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('imss')}
+          className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+            activeTab === 'imss' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <Award className="w-4 h-4" /> Consulta Semanas Cotizadas IMSS
         </button>
 
         <button
@@ -1023,7 +1115,237 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* PESTAÑA 3: CONFIGURACIÓN DE NOTIFICACIONES Y SEGURIDAD MULTI-CORREO */}
+      {/* PESTAÑA DE CONSULTA SEMANAS COTIZADAS IMSS (JORDAN DIGITAL) */}
+      {activeTab === 'imss' && (
+        <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Award className="w-5 h-5 text-sky-600" />
+                Consulta Automatizada de Semanas Cotizadas IMSS
+              </h2>
+              <p className="text-xs text-slate-500">
+                Integra automáticamente el flujo de Jordan Digital (Procesar, Estados y Descarga Directa PDF).
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Formulario de Consulta Directa */}
+            <div className="lg:col-span-1 p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Search className="w-4 h-4 text-sky-600" /> Ejecutar Consulta
+              </h3>
+
+              <form onSubmit={handleConsultarSemanasImss} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">CURP del Trabajador *</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={18}
+                    placeholder="Ej. LOLA871016HGTPPL15"
+                    value={imssCurp}
+                    onChange={(e) => setImssCurp(e.target.value.toUpperCase())}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-sky-600 uppercase"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Tipo de Correo Proveedor</label>
+                  <select
+                    value={imssTipoCorreo}
+                    onChange={(e) => setImssTipoCorreo(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-sky-600"
+                  >
+                    <option value="hotmail">Hotmail / Outlook</option>
+                    <option value="gmail">Gmail</option>
+                    <option value="yahoo">Yahoo</option>
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loadingImss || !imssCurp}
+                  className="w-full py-3 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {loadingImss ? (
+                    <>
+                      <RefreshCcw className="w-4 h-4 animate-spin text-sky-200" /> Procesando en Jordan Digital...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4" /> Consultar y Obtener PDF
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* Resultados y Descargas de PDF */}
+            <div className="lg:col-span-2 p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-sky-600" /> Resultado de la Consulta
+              </h3>
+
+              {imssResult ? (
+                <div className="space-y-4">
+                  <div className="p-5 bg-white rounded-xl border border-slate-200 space-y-4 shadow-sm">
+                    
+                    {/* Encabezado con Estado Certificado */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                      <div>
+                        <span className="text-[10px] font-bold text-sky-600 uppercase font-mono tracking-wider">
+                          CONSULTA CERTIFICADA DE SEMANAS
+                        </span>
+                        <h4 className="text-base font-black text-slate-900">
+                          {(() => {
+                            if (imssResult.estadoResponse) {
+                              for (const k of Object.keys(imssResult.estadoResponse)) {
+                                const item = imssResult.estadoResponse[k];
+                                if (item && item.nombre) return item.nombre;
+                              }
+                            }
+                            return 'Trabajador IMSS';
+                          })()}
+                        </h4>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full text-xs font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Consulta Completada
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Ficha Técnica de Detalles de la Consulta */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase font-mono">CURP Registrada</span>
+                        <span className="font-mono font-bold text-slate-900">{imssResult.curp}</span>
+                      </div>
+
+                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase font-mono">Folio de Rastreo (SID)</span>
+                        <span className="font-mono font-bold text-sky-700">{imssResult.sid || 'N/A'}</span>
+                      </div>
+
+                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase font-mono">Archivo Generado</span>
+                        <span className="font-mono font-bold text-slate-900 truncate block" title={imssResult.pdfFileName}>
+                          {imssResult.pdfFileName || 'Reporte_Semanas.pdf'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Bloque Destacado de Descarga y Visor */}
+                    {imssResult.pdfUrl ? (
+                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-emerald-600 text-white rounded-lg">
+                            <Award className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-emerald-950">Documento Oficial Listo para Entrega</p>
+                            <p className="text-[11px] text-emerald-800">Se ha descargado y abierto en el visor de documentos de GATSA.</p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (imssResult.pdfFileName) {
+                              handleDownloadAndInspectImssPdf(imssResult.pdfFileName, `Reporte Semanas ${imssResult.curp}`);
+                            }
+                          }}
+                          className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-lg shadow transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <Eye className="w-4 h-4" /> Abrir Visor / Re-descargar
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
+                        <p className="font-bold">Solicitud procesada en el servidor externo.</p>
+                        <p className="mt-1">Si el archivo aún no aparece, vuelva a presionar el botón de consultar en unos momentos.</p>
+                      </div>
+                    )}
+
+                    {/* Acordeón Oculto de Debugging Técnico (Raw Data) */}
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setShowRawImssResponse(!showRawImssResponse)}
+                        className="text-[11px] font-bold text-slate-500 hover:text-slate-800 transition flex items-center gap-1 cursor-pointer"
+                      >
+                        {showRawImssResponse ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        {showRawImssResponse ? 'Ocultar respuesta técnica (Raw JSON)' : 'Ver detalles técnicos de la consulta (Solo Soporte/Admin)'}
+                      </button>
+
+                      {showRawImssResponse && (
+                        <pre className="mt-2 p-3 bg-slate-900 text-sky-300 text-[10px] font-mono rounded-lg overflow-x-auto max-h-48 animate-in fade-in">
+                          {JSON.stringify(imssResult, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center bg-white rounded-xl border border-dashed border-slate-300 space-y-2">
+                  <Award className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-xs text-slate-500">Ingresa la CURP a la izquierda para iniciar la consulta automatizada.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* SECCIÓN DE CONTROL DE ARCHIVOS ALMACENADOS DE SEMANAS IMSS */}
+          <div className="pt-6 border-t border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Layers className="w-4 h-4 text-sky-600" /> Control de Archivos IMSS Almacenados ({imssHistory.length})
+              </h3>
+              <button
+                type="button"
+                onClick={fetchImssHistory}
+                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCcw className="w-3.5 h-3.5" /> Actualizar Lista
+              </button>
+            </div>
+
+            {imssHistory.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {imssHistory.map((item, idx) => (
+                  <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2.5 truncate">
+                      <FileText className="w-4 h-4 text-sky-600 shrink-0" />
+                      <div className="truncate">
+                        <span className="font-bold text-slate-900 block truncate font-mono text-[11px]">{item.fileName}</span>
+                        <span className="text-[10px] text-slate-500 block font-mono">
+                          {(item.fileSize / 1024).toFixed(1)} KB • {new Date(item.updatedAt).toLocaleString('es-MX')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadAndInspectImssPdf(item.fileName, `Archivo IMSS ${item.fileName}`)}
+                      className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[10px] transition flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <Eye className="w-3 h-3 text-sky-400" /> Abrir Visor
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-6 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs italic">
+                No hay archivos de Semanas Cotizadas en el control de almacenamiento local.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {activeTab === 'config' && (
         <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6 max-w-2xl">
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -1055,6 +1377,24 @@ export default function AdminDashboardPage() {
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
                 Puedes ingresar múltiples correos electrónicos separados por comas (ej. <code>ing.dazaeev@gmail.com, oswaldonoealexa@gmail.com</code>).
+              </p>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100">
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Cookie de Sesión Jordan Digital (Llave: IMSS_JORDAN_COOKIE)
+              </label>
+              <div className="relative">
+                <textarea
+                  rows={3}
+                  placeholder="session=.eJwlzkFqAzEMBdC7e..."
+                  value={imssCookie}
+                  onChange={(e) => setImssCookie(e.target.value)}
+                  className="w-full font-mono text-[11px] p-3 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-sky-600"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Copia la cookie completa de tu navegador o Postman (<code>session=.eJwl...</code>) para autenticar peticiones a <strong>jordan-digital.com</strong>.
               </p>
             </div>
 

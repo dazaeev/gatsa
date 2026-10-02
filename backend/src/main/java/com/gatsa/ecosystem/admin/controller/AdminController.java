@@ -13,10 +13,11 @@ import com.gatsa.ecosystem.repository.UserRepository;
 import com.gatsa.ecosystem.util.EmailService;
 import com.gatsa.ecosystem.util.ProcedureUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -346,7 +347,320 @@ public class AdminController {
                 .map(SystemConfiguration::getConfigValue)
                 .orElse("ing.dazaeev@gmail.com");
 
-        return ResponseEntity.ok(Map.of("adminEmail", adminEmail));
+        String imssCookie = configRepository.findByConfigKey("IMSS_JORDAN_COOKIE")
+                .map(SystemConfiguration::getConfigValue)
+                .orElse("");
+
+        Map<String, String> resp = new HashMap<>();
+        resp.put("adminEmail", adminEmail);
+        resp.put("imssCookie", imssCookie);
+
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/imss/cookie")
+    public ResponseEntity<Map<String, Object>> saveImssCookie(@RequestBody Map<String, String> body) {
+        String cookie = body.get("cookie");
+        if (cookie != null) {
+            SystemConfiguration config = configRepository.findByConfigKey("IMSS_JORDAN_COOKIE")
+                    .orElse(SystemConfiguration.builder().configKey("IMSS_JORDAN_COOKIE").build());
+            config.setConfigValue(cookie.trim());
+            config.setDescription("Cookie de sesión para la API externa Jordan Digital IMSS Semanas");
+            configRepository.save(config);
+        }
+        return ResponseEntity.ok(Map.of("success", true, "message", "Cookie de IMSS/Jordan guardada correctamente."));
+    }
+
+    @PostMapping("/imss/consultar-semanas")
+    public ResponseEntity<Map<String, Object>> consultarSemanasImss(@RequestBody Map<String, String> body) {
+        String curp = body.get("curp");
+        String tipoCorreo = body.getOrDefault("tipoCorreo", "hotmail");
+
+        if (curp == null || curp.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "La CURP es requerida"));
+        }
+
+        String storedCookie = configRepository.findByConfigKey("IMSS_JORDAN_COOKIE")
+                .map(SystemConfiguration::getConfigValue)
+                .orElse("");
+
+        RestTemplate restTemplate = new RestTemplate();
+
+        try {
+            // 1. Iniciar procesar CURP
+            String procesarUrl = "https://jordan-digital.com/SemanasMultiple/procesar";
+            HttpHeaders headers1 = new HttpHeaders();
+            headers1.setContentType(MediaType.APPLICATION_JSON);
+            if (!storedCookie.isBlank()) {
+                headers1.set("Cookie", storedCookie);
+            }
+
+            Map<String, Object> req1 = new HashMap<>();
+            req1.put("curps", List.of(curp.trim().toUpperCase()));
+            req1.put("tipo_correo", tipoCorreo);
+            req1.put("autorizacion", "1");
+
+            HttpEntity<Map<String, Object>> entity1 = new HttpEntity<>(req1, headers1);
+            ResponseEntity<Map> resp1 = restTemplate.postForEntity(procesarUrl, entity1, Map.class);
+
+            // Verificar si devolvió sid o si requiere cookie
+            if (resp1.getBody() != null && resp1.getBody().containsKey("error") && resp1.getBody().get("error").toString().contains("expirada")) {
+                return ResponseEntity.status(401).body(Map.of("success", false, "message", "Cookie de sesión Jordan expirada. Actualícela en la pestaña Configuración."));
+            }
+
+            // Extraer SID de la respuesta de /procesar
+            String sid = null;
+            if (resp1.getBody() != null) {
+                Map respMap = resp1.getBody();
+                if (respMap.containsKey("items") && respMap.get("items") instanceof List) {
+                    List<?> items = (List<?>) respMap.get("items");
+                    if (!items.isEmpty() && items.get(0) instanceof Map) {
+                        Map<?, ?> firstItem = (Map<?, ?>) items.get(0);
+                        if (firstItem.containsKey("sid") && firstItem.get("sid") != null) {
+                            sid = firstItem.get("sid").toString();
+                        }
+                    }
+                }
+                if (sid == null && respMap.containsKey("sids") && respMap.get("sids") instanceof List) {
+                    List<?> sids = (List<?>) respMap.get("sids");
+                    if (!sids.isEmpty()) sid = sids.get(0).toString();
+                }
+                if (sid == null && respMap.containsKey("sid") && respMap.get("sid") != null) {
+                    sid = respMap.get("sid").toString();
+                }
+                if (sid == null && respMap.containsKey("data") && respMap.get("data") instanceof List) {
+                    List<?> dataList = (List<?>) respMap.get("data");
+                    if (!dataList.isEmpty() && dataList.get(0) instanceof Map) {
+                        Map<?, ?> item = (Map<?, ?>) dataList.get(0);
+                        if (item.containsKey("sid") && item.get("sid") != null) sid = item.get("sid").toString();
+                    }
+                }
+            }
+
+            if (sid == null) {
+                return ResponseEntity.ok(Map.of(
+                        "success", false,
+                        "rawProcessResponse", resp1.getBody(),
+                        "message", "No se pudo obtener el 'sid' de la respuesta de Jordan Digital. Verifique el log raw."
+                ));
+            }
+
+            // 2. Consultar estado con el SID obtenido (con reintentos/polling por si el PDF tarda unos segundos en generarse)
+            String estadosUrl = "https://jordan-digital.com/SemanasMultiple/estados";
+            HttpHeaders headers2 = new HttpHeaders();
+            headers2.setContentType(MediaType.APPLICATION_JSON);
+            if (!storedCookie.isBlank()) {
+                headers2.set("Cookie", storedCookie);
+            }
+
+            Map<String, Object> req2 = Map.of("sids", List.of(sid));
+            HttpEntity<Map<String, Object>> entity2 = new HttpEntity<>(req2, headers2);
+
+            String pdfFileName = null;
+            Map resp2Body = null;
+
+            // Intentar hasta 6 veces (hasta 12 segundos) consultar el estado hasta obtener el archivo_generado
+            for (int attempt = 1; attempt <= 6; attempt++) {
+                ResponseEntity<Map> resp2 = restTemplate.postForEntity(estadosUrl, entity2, Map.class);
+                resp2Body = resp2.getBody();
+
+                if (resp2Body != null) {
+                    pdfFileName = extractArchivoGenerado(resp2Body);
+                    if (pdfFileName != null && !pdfFileName.isBlank()) {
+                        break;
+                    }
+                }
+                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+            }
+
+            String pdfUrl = null;
+            if (pdfFileName != null && !pdfFileName.isBlank()) {
+                pdfUrl = "/api/v1/admin/imss/download-pdf?file=" + pdfFileName;
+
+                // Guardar copia local en el control de archivos del servidor
+                try {
+                    HttpHeaders downloadHeaders = new HttpHeaders();
+                    if (!storedCookie.isBlank()) {
+                        downloadHeaders.set("Cookie", storedCookie);
+                    }
+                    HttpEntity<Void> downloadEntity = new HttpEntity<>(downloadHeaders);
+                    String remoteDownloadUrl = "https://jordan-digital.com/download/" + pdfFileName;
+                    ResponseEntity<byte[]> pdfResponse = restTemplate.exchange(remoteDownloadUrl, HttpMethod.GET, downloadEntity, byte[].class);
+
+                    if (pdfResponse.getStatusCode() == HttpStatus.OK && pdfResponse.getBody() != null) {
+                        Path uploadPath = Paths.get(System.getProperty("user.dir"), "uploads", "imss_semanas");
+                        if (!Files.exists(uploadPath)) {
+                            Files.createDirectories(uploadPath);
+                        }
+                        Path targetLocation = uploadPath.resolve(pdfFileName);
+                        Files.write(targetLocation, pdfResponse.getBody());
+                        System.out.println(">>> REPORTE IMSS GUARDADO EN CONTROL DE ARCHIVOS LOCAL: " + targetLocation.toAbsolutePath() + " <<<");
+                    }
+                } catch (Exception e) {
+                    System.err.println("Advertencia guardando copia local de semanas IMSS: " + e.getMessage());
+                }
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "curp", curp,
+                    "sid", sid,
+                    "pdfFileName", pdfFileName != null ? pdfFileName : "",
+                    "estadoResponse", resp2Body != null ? resp2Body : Map.of(),
+                    "pdfUrl", pdfUrl != null ? pdfUrl : "",
+                    "message", pdfUrl != null ? "¡Consulta y PDF generados exitosamente!" : "Proceso iniciado. El servidor aún está procesando el PDF, vuelva a consultar en unos momentos."
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "Error durante la integración con Jordan Digital: " + e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/imss/download-pdf")
+    public ResponseEntity<byte[]> downloadImssPdf(@RequestParam("file") String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // 1. Verificar si ya existe en el almacenamiento local del servidor
+        try {
+            Path localFilePath = Paths.get(System.getProperty("user.dir"), "uploads", "imss_semanas", fileName.trim());
+            if (Files.exists(localFilePath)) {
+                byte[] localBytes = Files.readAllBytes(localFilePath);
+                HttpHeaders responseHeaders = new HttpHeaders();
+                responseHeaders.setContentType(MediaType.APPLICATION_PDF);
+                responseHeaders.setContentDisposition(ContentDisposition.attachment().filename(fileName).build());
+                return new ResponseEntity<>(localBytes, responseHeaders, HttpStatus.OK);
+            }
+        } catch (Exception e) {
+            System.err.println("Advertencia leyendo PDF local de semanas: " + e.getMessage());
+        }
+
+        // 2. Si no existe localmente, descargarlo de Jordan Digital con la Cookie
+        String storedCookie = configRepository.findByConfigKey("IMSS_JORDAN_COOKIE")
+                .map(SystemConfiguration::getConfigValue)
+                .orElse("");
+
+        try {
+            String downloadUrl = "https://jordan-digital.com/download/" + fileName.trim();
+            RestTemplate restTemplate = new RestTemplate();
+
+            HttpHeaders headers = new HttpHeaders();
+            if (!storedCookie.isBlank()) {
+                headers.set("Cookie", storedCookie);
+            }
+
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<byte[]> response = restTemplate.exchange(downloadUrl, HttpMethod.GET, entity, byte[].class);
+
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                // Guardar copia local para futuras consultas del control de archivos
+                try {
+                    Path uploadPath = Paths.get(System.getProperty("user.dir"), "uploads", "imss_semanas");
+                    if (!Files.exists(uploadPath)) {
+                        Files.createDirectories(uploadPath);
+                    }
+                    Files.write(uploadPath.resolve(fileName.trim()), response.getBody());
+                } catch (Exception ignored) {}
+            }
+
+            HttpHeaders responseHeaders = new HttpHeaders();
+            responseHeaders.setContentType(MediaType.APPLICATION_PDF);
+            responseHeaders.setContentDisposition(ContentDisposition.attachment().filename(fileName).build());
+
+            return new ResponseEntity<>(response.getBody(), responseHeaders, HttpStatus.OK);
+        } catch (Exception e) {
+            System.err.println("Error descargando PDF de Jordan Digital con Cookie: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/imss/history")
+    public ResponseEntity<List<Map<String, Object>>> getImssFilesHistory() {
+        List<Map<String, Object>> filesList = new ArrayList<>();
+        try {
+            Path uploadPath = Paths.get(System.getProperty("user.dir"), "uploads", "imss_semanas");
+            if (Files.exists(uploadPath)) {
+                try (var stream = Files.list(uploadPath)) {
+                    stream.filter(Files::isRegularFile).forEach(path -> {
+                        try {
+                            String fName = path.getFileName().toString();
+                            long fSize = Files.size(path);
+                            long lastModified = Files.getLastModifiedTime(path).toMillis();
+                            
+                            Map<String, Object> fileInfo = new HashMap<>();
+                            fileInfo.put("fileName", fName);
+                            fileInfo.put("fileSize", fSize);
+                            fileInfo.put("updatedAt", lastModified);
+                            fileInfo.put("downloadUrl", "/api/v1/admin/imss/download-pdf?file=" + fName);
+                            filesList.add(fileInfo);
+                        } catch (IOException ignored) {}
+                    });
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error listando historial de semanas IMSS: " + e.getMessage());
+        }
+
+        filesList.sort((a, b) -> Long.compare((Long) b.get("updatedAt"), (Long) a.get("updatedAt")));
+        return ResponseEntity.ok(filesList);
+    }
+
+    private String extractArchivoGenerado(Map<?, ?> respBody) {
+        if (respBody == null) return null;
+
+        // Caso 1: Atributo directo "archivo_generado" o "archivo"
+        if (respBody.containsKey("archivo_generado") && respBody.get("archivo_generado") != null) {
+            return respBody.get("archivo_generado").toString();
+        }
+        if (respBody.containsKey("archivo") && respBody.get("archivo") != null) {
+            return respBody.get("archivo").toString();
+        }
+
+        // Caso 2: Objeto cuya clave es el SID (ej. { "49f36166": { "archivo_generado": "RSC_..." } })
+        for (Object key : respBody.keySet()) {
+            Object value = respBody.get(key);
+            if (value instanceof Map) {
+                Map<?, ?> innerMap = (Map<?, ?>) value;
+                if (innerMap.containsKey("archivo_generado") && innerMap.get("archivo_generado") != null) {
+                    return innerMap.get("archivo_generado").toString();
+                }
+                if (innerMap.containsKey("archivo") && innerMap.get("archivo") != null) {
+                    return innerMap.get("archivo").toString();
+                }
+            }
+        }
+
+        // Caso 3: Viene dentro de una lista "data" o "items" o "estados"
+        List<?> list = null;
+        if (respBody.containsKey("data") && respBody.get("data") instanceof List) {
+            list = (List<?>) respBody.get("data");
+        } else if (respBody.containsKey("items") && respBody.get("items") instanceof List) {
+            list = (List<?>) respBody.get("items");
+        } else if (respBody.containsKey("estados") && respBody.get("estados") instanceof List) {
+            list = (List<?>) respBody.get("estados");
+        }
+
+        if (list != null && !list.isEmpty()) {
+            for (Object obj : list) {
+                if (obj instanceof Map) {
+                    Map<?, ?> map = (Map<?, ?>) obj;
+                    if (map.containsKey("archivo_generado") && map.get("archivo_generado") != null) {
+                        return map.get("archivo_generado").toString();
+                    }
+                    if (map.containsKey("archivo") && map.get("archivo") != null) {
+                        return map.get("archivo").toString();
+                    }
+                    if (map.containsKey("url") && map.get("url") != null) {
+                        return map.get("url").toString();
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     @PostMapping("/config")
