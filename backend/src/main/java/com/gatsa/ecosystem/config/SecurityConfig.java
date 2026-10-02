@@ -74,9 +74,10 @@ public class SecurityConfig {
                 .requestMatchers("/publicsite/branches", "/publicsite/simulator/**", "/publicsite/insurance/**", "/publicsite/posts", "/publicsite/leads").permitAll()
                 .requestMatchers("/auth/**").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**").permitAll()
-                .requestMatchers("/admin/**").hasRole("ADMIN")
-                .requestMatchers("/portalclient/**").hasAnyRole("CLIENT", "ADMIN")
-                .requestMatchers("/b2bpartner/**").hasAnyRole("PARTNER", "ADMIN")
+                .requestMatchers("/admin/branches/**").hasRole("SUPER_ADMIN")
+                .requestMatchers("/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN", "GERENTE_SUCURSAL", "AGENTE_COMPLETO", "OPERADOR_IMSS")
+                .requestMatchers("/portalclient/**").hasAnyRole("CLIENT", "ADMIN", "SUPER_ADMIN", "GERENTE_SUCURSAL", "AGENTE_COMPLETO", "OPERADOR_IMSS")
+                .requestMatchers("/b2bpartner/**").hasAnyRole("PARTNER", "ADMIN", "SUPER_ADMIN")
                 .anyRequest().authenticated()
             )
             .exceptionHandling(exception -> exception

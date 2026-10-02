@@ -28,7 +28,10 @@ export const Navbar: React.FC = () => {
 
   const getRoleLabel = () => {
     if (!user) return '';
-    if (user.role === 'ROLE_ADMIN') return 'Administrador';
+    if (user.role === 'ROLE_SUPER_ADMIN' || user.role === 'ROLE_ADMIN') return 'Super Admin';
+    if (user.role === 'ROLE_GERENTE_SUCURSAL') return 'Gerente Sucursal';
+    if (user.role === 'ROLE_AGENTE_COMPLETO') return 'Agente Operativo';
+    if (user.role === 'ROLE_OPERADOR_IMSS') return 'Operador IMSS';
     if (user.role === 'ROLE_PARTNER') return 'Socio B2B';
     return 'Cliente';
   };
@@ -142,12 +145,12 @@ export const Navbar: React.FC = () => {
                     <UserCheck className="w-4 h-4 text-emerald-600" /> Portal Socio
                   </Link>
                 )}
-                {user?.role === 'ROLE_ADMIN' && (
+                {(user?.role === 'ROLE_SUPER_ADMIN' || user?.role === 'ROLE_ADMIN' || user?.role === 'ROLE_GERENTE_SUCURSAL' || user?.role === 'ROLE_AGENTE_COMPLETO' || user?.role === 'ROLE_OPERADOR_IMSS') && (
                   <Link
                     href="/admin-dashboard"
                     className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-slate-100 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow"
                   >
-                    <ShieldAlert className="w-4 h-4 text-sky-400" /> Panel Admin
+                    <ShieldAlert className="w-4 h-4 text-sky-400" /> Panel Operativo
                   </Link>
                 )}
 

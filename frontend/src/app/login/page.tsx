@@ -22,7 +22,13 @@ function LoginContent() {
         router.replace('/portal-cliente');
       } else if (user.role === 'ROLE_PARTNER') {
         router.replace('/portal-socio');
-      } else if (user.role === 'ROLE_ADMIN') {
+      } else if (
+        user.role === 'ROLE_ADMIN' ||
+        user.role === 'ROLE_SUPER_ADMIN' ||
+        user.role === 'ROLE_GERENTE_SUCURSAL' ||
+        user.role === 'ROLE_AGENTE_COMPLETO' ||
+        user.role === 'ROLE_OPERADOR_IMSS'
+      ) {
         router.replace('/admin-dashboard');
       }
     }
@@ -36,25 +42,31 @@ function LoginContent() {
 
     try {
       const response = await api.post('/auth/login', { username: identifier.trim(), password });
-      const { accessToken, role, fullName, email, phone } = response.data;
+      const { accessToken, role, fullName, email, phone, branch } = response.data;
       
       login(accessToken, {
         fullName,
         email,
         phone,
         role,
+        branch,
       });
 
-      // Enrutamiento Inteligente basado en el rol real de MySQL / JWT
-      if (role === 'ROLE_CLIENT') {
-        router.push('/portal-cliente');
-      } else if (role === 'ROLE_PARTNER') {
-        router.push('/portal-socio');
-      } else if (role === 'ROLE_ADMIN') {
-        router.push('/admin-dashboard');
-      } else {
-        router.push('/');
+      // Enrutamiento Garantizado basado en el rol real de MySQL / JWT
+      let targetPath = '/portal-cliente';
+      if (role === 'ROLE_PARTNER') {
+        targetPath = '/portal-socio';
+      } else if (
+        role === 'ROLE_ADMIN' ||
+        role === 'ROLE_SUPER_ADMIN' ||
+        role === 'ROLE_GERENTE_SUCURSAL' ||
+        role === 'ROLE_AGENTE_COMPLETO' ||
+        role === 'ROLE_OPERADOR_IMSS'
+      ) {
+        targetPath = '/admin-dashboard';
       }
+
+      window.location.href = targetPath;
     } catch (err: any) {
       console.error('Error en autenticación', err);
       setError('Credenciales inválidas. Verifica tu correo o número de teléfono y contraseña.');

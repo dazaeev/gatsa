@@ -7,7 +7,8 @@ export interface User {
   fullName: string;
   email: string;
   phone?: string;
-  role: 'ROLE_CLIENT' | 'ROLE_PARTNER' | 'ROLE_ADMIN';
+  branch?: string;
+  role: 'ROLE_CLIENT' | 'ROLE_PARTNER' | 'ROLE_ADMIN' | 'ROLE_SUPER_ADMIN' | 'ROLE_GERENTE_SUCURSAL' | 'ROLE_AGENTE_COMPLETO' | 'ROLE_OPERADOR_IMSS' | string;
 }
 
 interface AuthContextType {

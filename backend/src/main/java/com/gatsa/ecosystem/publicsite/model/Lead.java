@@ -31,7 +31,13 @@ public class Lead {
     private String email;
 
     @Column(nullable = false, length = 50)
-    private String branch; // ORIZABA_BARRIO_NUEVO, ORIZABA_CENTRO, HUATUSCO_CENTRO
+    private String branch; // Código de sucursal (ej: ORIZABA_BARRIO_NUEVO, ORIZABA_CENTRO, HUATUSCO_CENTRO)
+
+    @Column(name = "created_by_user_id")
+    private Long createdByUserId; // ID del empleado/usuario que creó la solicitud/log
+
+    @Column(name = "updated_by_user_id")
+    private Long updatedByUserId; // ID del empleado/usuario que dictaminó/actualizó
 
     @Column(nullable = false, length = 50)
     private String serviceOfInterest; // RETIRO_DESEMPLEO_AFORE, MEJORAVIT, COTIZADOR_SEGUROS

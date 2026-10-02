@@ -57,6 +57,7 @@ public class AuthServiceImpl implements AuthService {
                 .fullName(user.getFullName())
                 .phone(user.getPhone())
                 .email(user.getEmail())
+                .branch(user.getBranch() != null ? user.getBranch().getCode() : null)
                 .build();
     }
 

@@ -44,34 +44,35 @@ public class PublicSiteController {
     private PasswordEncoder passwordEncoder;
 
     @Autowired
+    private com.gatsa.ecosystem.repository.BranchRepository branchRepository;
+
+    @Autowired
     private EmailService emailService;
 
     @GetMapping("/branches")
     public ResponseEntity<List<Map<String, String>>> getBranches() {
+        List<com.gatsa.ecosystem.model.Branch> dbBranches = branchRepository.findByActiveTrue();
+        if (dbBranches != null && !dbBranches.isEmpty()) {
+            List<Map<String, String>> result = dbBranches.stream().map(b -> Map.of(
+                    "id", b.getCode(),
+                    "code", b.getCode(),
+                    "name", b.getName(),
+                    "address", b.getAddress() != null ? b.getAddress() : "",
+                    "phone", b.getPhone() != null ? b.getPhone() : "",
+                    "whatsapp", b.getPhone() != null ? b.getPhone() : "272 154 6920",
+                    "schedule", "Lunes a Viernes: 9:00 AM - 6:00 PM"
+            )).toList();
+            return ResponseEntity.ok(result);
+        }
+
         return ResponseEntity.ok(List.of(
                 Map.of(
                         "id", "ORIZABA_BARRIO_NUEVO",
                         "name", "Sucursal Barrio Nuevo - Orizaba",
-                        "address", "Av. Independencia #265 (entre Chapultepec y Mártires 7 de Enero), Barrio Nuevo, Orizaba, Veracruz",
+                        "address", "Av. Independencia #265, Orizaba, Veracruz",
                         "phone", "(272) 153-3528",
                         "whatsapp", "272 154 6920",
-                        "schedule", "Lunes a Viernes: 9:00 AM - 6:00 PM | Sábados: 9:00 AM - 2:00 PM"
-                ),
-                Map.of(
-                        "id", "ORIZABA_CENTRO",
-                        "name", "Sucursal Centro Corporativo - Orizaba",
-                        "address", "Calle Real #410, Col. Centro, Orizaba, Veracruz",
-                        "phone", "(272) 724-1000",
-                        "whatsapp", "272 154 6920",
-                        "schedule", "Lunes a Viernes: 9:00 AM - 7:00 PM"
-                ),
-                Map.of(
-                        "id", "HUATUSCO_CENTRO",
-                        "name", "Sucursal Huatusco",
-                        "address", "Av. 1 #312, Centro, Huatusco, Veracruz",
-                        "phone", "(273) 734-2020",
-                        "whatsapp", "273 100 5050",
-                        "schedule", "Lunes a Viernes: 9:00 AM - 5:00 PM"
+                        "schedule", "Lunes a Viernes: 9:00 AM - 6:00 PM"
                 )
         ));
     }
@@ -101,7 +102,7 @@ public class PublicSiteController {
         }
 
         // 1. Verificar si el usuario ya tiene documentos subidos
-        Map<String, Object> userResult = ensureUserAccountExists(request.getFullName(), request.getPhone(), request.getEmail());
+        Map<String, Object> userResult = ensureUserAccountExists(request.getFullName(), request.getPhone(), request.getEmail(), "ORIZABA_BARRIO_NUEVO");
         boolean isExistingUser = (boolean) userResult.getOrDefault("isExistingUser", false);
         User user = (User) userResult.get("user");
 
@@ -153,7 +154,7 @@ public class PublicSiteController {
     @PostMapping("/leads")
     public ResponseEntity<Map<String, Object>> captureLead(@Valid @RequestBody LeadCaptureRequest request) {
         // 1. Verificar o crear la cuenta B2C
-        Map<String, Object> userResult = ensureUserAccountExists(request.getFullName(), request.getPhone(), request.getEmail());
+        Map<String, Object> userResult = ensureUserAccountExists(request.getFullName(), request.getPhone(), request.getEmail(), request.getBranch());
         boolean isExistingUser = (boolean) userResult.getOrDefault("isExistingUser", false);
         User user = (User) userResult.get("user");
 
@@ -205,7 +206,7 @@ public class PublicSiteController {
         ));
     }
 
-    private Map<String, Object> ensureUserAccountExists(String fullName, String phone, String email) {
+    private Map<String, Object> ensureUserAccountExists(String fullName, String phone, String email, String branchCode) {
         if (phone == null || phone.isBlank()) return Map.of("isExistingUser", false);
         String cleanPhone = phone.replaceAll("\\D", "");
 
@@ -220,6 +221,11 @@ public class PublicSiteController {
             return map;
         }
 
+        com.gatsa.ecosystem.model.Branch userBranch = null;
+        if (branchCode != null && !branchCode.isBlank()) {
+            userBranch = branchRepository.findByCode(branchCode).orElse(null);
+        }
+
         String userEmail = (email != null && !email.isBlank()) ? email.trim() : cleanPhone + "@gatsa.com.mx";
         User newClient = User.builder()
                 .fullName(fullName)
@@ -227,6 +233,7 @@ public class PublicSiteController {
                 .email(userEmail)
                 .password(passwordEncoder.encode(cleanPhone))
                 .role(SecurityConstants.ROLE_CLIENT)
+                .branch(userBranch)
                 .active(true)
                 .build();
 

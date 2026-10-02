@@ -66,8 +66,33 @@ interface GroupedLeadClient {
   leads: Lead[];
 }
 
+interface BranchItem {
+  id: number;
+  code: string;
+  name: string;
+  address?: string;
+  phone?: string;
+  active: boolean;
+}
+
+interface TeamMember {
+  id: number;
+  fullName: string;
+  phone: string;
+  email: string;
+  role: string;
+  active: boolean;
+  branchName: string;
+  branchCode: string;
+}
+
 export default function AdminDashboardPage() {
   const { isAuthenticated, user, logout } = useAuth();
+
+  const isSuperAdmin = user?.role === 'ROLE_SUPER_ADMIN' || user?.role === 'ROLE_ADMIN';
+  const isGerente = user?.role === 'ROLE_GERENTE_SUCURSAL';
+  const isAgente = user?.role === 'ROLE_AGENTE_COMPLETO';
+  const isOperadorImss = user?.role === 'ROLE_OPERADOR_IMSS';
   
   const [leads, setLeads] = useState<Lead[]>([]);
   const [clientGroups, setClientGroups] = useState<ClientDocumentGroup[]>([]);
@@ -75,7 +100,40 @@ export default function AdminDashboardPage() {
   const [accessDenied, setAccessDenied] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
-  const [activeTab, setActiveTab] = useState<'leads' | 'imss' | 'documents' | 'config'>('leads');
+
+  useEffect(() => {
+    if (user && !isSuperAdmin && user.branch) {
+      setBranchFilter(user.branch);
+    }
+  }, [user]);
+  const [activeTab, setActiveTab] = useState<'leads' | 'imss' | 'documents' | 'branches' | 'team' | 'config'>('leads');
+
+  // Sucursales y Equipo
+  const [branchesList, setBranchesList] = useState<BranchItem[]>([]);
+  const [teamList, setTeamList] = useState<TeamMember[]>([]);
+
+  // Formularo Nueva Sucursal (Super Admin)
+  const [newBranchName, setNewBranchName] = useState<string>('');
+  const [newBranchCode, setNewBranchCode] = useState<string>('');
+  const [newBranchAddress, setNewBranchAddress] = useState<string>('');
+  const [newBranchPhone, setNewBranchPhone] = useState<string>('');
+
+  // Formulario Nuevo Empleado/Colaborador (Super Admin / Gerente)
+  const [newTeamName, setNewTeamName] = useState<string>('');
+  const [newTeamPhone, setNewTeamPhone] = useState<string>('');
+  const [newTeamEmail, setNewTeamEmail] = useState<string>('');
+  const [newTeamPass, setNewTeamPass] = useState<string>('');
+  const [newTeamRole, setNewTeamRole] = useState<string>('ROLE_AGENTE_COMPLETO');
+  const [newTeamBranchCode, setNewTeamBranchCode] = useState<string>('');
+
+  useEffect(() => {
+    if (branchesList && branchesList.length > 0) {
+      const defaultCode = String(branchesList[0].code || branchesList[0].id || '');
+      if (defaultCode && !newTeamBranchCode) {
+        setNewTeamBranchCode(defaultCode);
+      }
+    }
+  }, [branchesList]);
 
   // Toggle para Acordeón Raw Data
   const [showRawImssResponse, setShowRawImssResponse] = useState<boolean>(false);
@@ -121,14 +179,85 @@ export default function AdminDashboardPage() {
   const [savingDictamen, setSavingDictamen] = useState<boolean>(false);
 
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'ROLE_ADMIN') {
+    if (isAuthenticated && (isSuperAdmin || isGerente || isAgente || isOperadorImss)) {
+      if (isOperadorImss) {
+        setActiveTab('imss');
+      }
+      
+      // Si NO es Super Admin, inicializar el branchFilter con la sucursal asignada en lugar de 'ALL'
+      if (!isSuperAdmin && user?.branch) {
+        setBranchFilter(user.branch);
+      }
+
       fetchAdminData();
       fetchImssHistory();
+      fetchBranches();
+      fetchTeam();
     } else {
       setLoading(false);
       setAccessDenied(true);
     }
   }, [isAuthenticated, user, leadPage, docPage, searchTerm, branchFilter]);
+
+  const fetchBranches = async () => {
+    try {
+      const resp = await api.get('/publicsite/branches');
+      setBranchesList(resp.data || []);
+    } catch (err) {
+      console.error('Error cargando sucursales', err);
+    }
+  };
+
+  const fetchTeam = async () => {
+    try {
+      const resp = await api.get('/admin/team');
+      setTeamList(resp.data || []);
+    } catch (err) {
+      console.error('Error cargando equipo de trabajo', err);
+    }
+  };
+
+  const handleCreateBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/admin/branches', {
+        name: newBranchName,
+        code: newBranchCode,
+        address: newBranchAddress,
+        phone: newBranchPhone,
+      });
+      alert(`¡Sucursal ${newBranchName} creada exitosamente!`);
+      setNewBranchName('');
+      setNewBranchCode('');
+      setNewBranchAddress('');
+      setNewBranchPhone('');
+      fetchBranches();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Error al crear la sucursal.');
+    }
+  };
+
+  const handleCreateTeamMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/admin/team', {
+        fullName: newTeamName,
+        phone: newTeamPhone,
+        email: newTeamEmail,
+        password: newTeamPass,
+        role: newTeamRole,
+        branchCode: newTeamBranchCode,
+      });
+      alert(`¡Colaborador ${newTeamName} registrado con exito!`);
+      setNewTeamName('');
+      setNewTeamPhone('');
+      setNewTeamEmail('');
+      setNewTeamPass('');
+      fetchTeam();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Error al registrar al colaborador.');
+    }
+  };
 
   useEffect(() => {
     setLeadPage(1);
@@ -485,23 +614,23 @@ export default function AdminDashboardPage() {
   const filteredClientGroups = clientGroups;
   const paginatedClientGroups = clientGroups;
 
-  if (!isAuthenticated || user?.role !== 'ROLE_ADMIN' || accessDenied) {
+  if (!isAuthenticated || (!isSuperAdmin && !isGerente && !isAgente && !isOperadorImss) || accessDenied) {
     return (
       <div className="max-w-md mx-auto px-4 py-20 text-center space-y-6">
         <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-2xl space-y-4">
           <div className="p-4 bg-slate-900 text-white rounded-full w-fit mx-auto shadow">
             <Lock className="w-10 h-10" />
           </div>
-          <h1 className="text-2xl font-black text-slate-900">Acceso Restringido - Área Administrador</h1>
+          <h1 className="text-2xl font-black text-slate-900">Acceso Restringido - Área Corporativa</h1>
           <p className="text-xs text-slate-600 leading-relaxed">
-            Se requieren credenciales activas con rol de <strong>Administrador Corporativo GATSA</strong>.
+            Se requieren credenciales activas de colaborador corporativo de <strong>Grupo GATSA</strong>.
           </p>
           <div className="pt-2 space-y-3">
             <Link
-              href="/login?type=admin"
+              href="/login"
               className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow transition flex items-center justify-center gap-2"
             >
-              <LogIn className="w-4 h-4 text-sky-400" /> Iniciar Sesión como Administrador <ArrowRight className="w-4 h-4" />
+              <LogIn className="w-4 h-4 text-sky-400" /> Iniciar Sesión <ArrowRight className="w-4 h-4" />
             </Link>
             <Link
               href="/"
@@ -555,13 +684,14 @@ export default function AdminDashboardPage() {
           <Building2 className="w-4 h-4 text-sky-600 shrink-0" />
           <select
             value={branchFilter}
+            disabled={!isSuperAdmin}
             onChange={(e) => setBranchFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:border-sky-600"
+            className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:border-sky-600 disabled:opacity-75 cursor-pointer disabled:cursor-not-allowed"
           >
-            <option value="ALL">Todas las Sucursales</option>
-            <option value="ORIZABA_BARRIO_NUEVO">Sucursal Barrio Nuevo - Orizaba</option>
-            <option value="ORIZABA_CENTRO">Centro Corporativo - Orizaba</option>
-            <option value="HUATUSCO_CENTRO">Sucursal Huatusco</option>
+            {isSuperAdmin && <option value="ALL">Todas las Sucursales</option>}
+            {branchesList.map((b) => (
+              <option key={b.id} value={b.code}>{b.name}</option>
+            ))}
           </select>
         </div>
 
@@ -569,15 +699,17 @@ export default function AdminDashboardPage() {
 
       {/* Selector de Pestañas del Admin */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2 text-xs font-bold">
-        <button
-          type="button"
-          onClick={() => setActiveTab('leads')}
-          className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
-            activeTab === 'leads' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <Users className="w-4 h-4" /> Solicitudes y Prospectos ({groupedLeadsList.length} Clientes)
-        </button>
+        {!isOperadorImss && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('leads')}
+            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+              activeTab === 'leads' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <Users className="w-4 h-4" /> Solicitudes y Prospectos ({groupedLeadsList.length} Clientes)
+          </button>
+        )}
 
         <button
           type="button"
@@ -589,25 +721,53 @@ export default function AdminDashboardPage() {
           <Award className="w-4 h-4" /> Consulta Semanas Cotizadas IMSS
         </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('documents')}
-          className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
-            activeTab === 'documents' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <FileText className="w-4 h-4" /> Expedientes y Documentos ({filteredClientGroups.length} Clientes)
-        </button>
+        {!isOperadorImss && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('documents')}
+            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+              activeTab === 'documents' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <FileText className="w-4 h-4" /> Expedientes y Documentos ({filteredClientGroups.length} Clientes)
+          </button>
+        )}
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('config')}
-          className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
-            activeTab === 'config' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <Settings className="w-4 h-4" /> Configuración de Notificaciones BD
-        </button>
+        {isSuperAdmin && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('branches')}
+            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+              activeTab === 'branches' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <Building2 className="w-4 h-4" /> Gestión de Sucursales ({branchesList.length})
+          </button>
+        )}
+
+        {(isSuperAdmin || isGerente) && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('team')}
+            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+              activeTab === 'team' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <UserCheck className="w-4 h-4" /> Mi Equipo de Trabajo ({teamList.length})
+          </button>
+        )}
+
+        {isSuperAdmin && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('config')}
+            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+              activeTab === 'config' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <Settings className="w-4 h-4" /> Configuración API & Notificaciones
+          </button>
+        )}
       </div>
 
       {/* PESTAÑA 1: SOLICITUDES Y LEADS CON MODO DE VISTA AGRUPADO O LISTA Y PAGINACIÓN HOMOGÉNEA */}
@@ -1298,55 +1458,254 @@ export default function AdminDashboardPage() {
               )}
             </div>
           </div>
+        </div>
+      )}
 
-          {/* SECCIÓN DE CONTROL DE ARCHIVOS ALMACENADOS DE SEMANAS IMSS */}
-          <div className="pt-6 border-t border-slate-200 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <Layers className="w-4 h-4 text-sky-600" /> Control de Archivos IMSS Almacenados ({imssHistory.length})
+      {/* PESTAÑA: GESTIÓN DE SUCURSALES (SUPER ADMIN) */}
+      {activeTab === 'branches' && isSuperAdmin && (
+        <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-sky-600" />
+                Gestión Centralizada de Sucursales (Super Admin Exclusivo)
+              </h2>
+              <p className="text-xs text-slate-500">
+                Alta y administración de sucursales físicas y corporativas de Grupo GATSA.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Formulario Agregar Sucursal */}
+            <div className="lg:col-span-1 p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Building2 className="w-4 h-4 text-sky-600" /> Registrar Nueva Sucursal
               </h3>
-              <button
-                type="button"
-                onClick={fetchImssHistory}
-                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-              >
-                <RefreshCcw className="w-3.5 h-3.5" /> Actualizar Lista
-              </button>
+
+              <form onSubmit={handleCreateBranch} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Nombre de la Sucursal *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Sucursal Córdoba Centro"
+                    value={newBranchName}
+                    onChange={(e) => setNewBranchName(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-medium focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Código Único (Identificador) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. CORDOBA_CENTRO"
+                    value={newBranchCode}
+                    onChange={(e) => setNewBranchCode(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 uppercase focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Dirección Física</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Av. 1 #405 Col. Centro"
+                    value={newBranchAddress}
+                    onChange={(e) => setNewBranchAddress(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-medium focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono de Contacto</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. 2711002030"
+                    value={newBranchPhone}
+                    onChange={(e) => setNewBranchPhone(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-medium focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Building2 className="w-4 h-4" /> Crear Sucursal
+                </button>
+              </form>
             </div>
 
-            {imssHistory.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {imssHistory.map((item, idx) => (
-                  <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2.5 truncate">
-                      <FileText className="w-4 h-4 text-sky-600 shrink-0" />
-                      <div className="truncate">
-                        <span className="font-bold text-slate-900 block truncate font-mono text-[11px]">{item.fileName}</span>
-                        <span className="text-[10px] text-slate-500 block font-mono">
-                          {(item.fileSize / 1024).toFixed(1)} KB • {new Date(item.updatedAt).toLocaleString('es-MX')}
-                        </span>
-                      </div>
+            {/* Listado de Sucursales Existentes */}
+            <div className="lg:col-span-2 p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-sky-600" /> Sucursales Registradas ({branchesList.length})
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {branchesList.map((b) => (
+                  <div key={b.id} className="p-4 bg-white rounded-xl border border-slate-200 space-y-2 shadow-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded text-[10px] font-mono font-bold">
+                        {b.code}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${b.active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}`}>
+                        {b.active ? 'ACTIVA' : 'INACTIVA'}
+                      </span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadAndInspectImssPdf(item.fileName, `Archivo IMSS ${item.fileName}`)}
-                      className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[10px] transition flex items-center gap-1 shrink-0 cursor-pointer"
-                    >
-                      <Eye className="w-3 h-3 text-sky-400" /> Abrir Visor
-                    </button>
+                    <h4 className="font-black text-slate-900 text-sm">{b.name}</h4>
+                    {b.address && <p className="text-xs text-slate-500">{b.address}</p>}
+                    {b.phone && <p className="text-xs font-mono text-slate-600">Tel: {b.phone}</p>}
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="p-6 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs italic">
-                No hay archivos de Semanas Cotizadas en el control de almacenamiento local.
-              </div>
-            )}
+            </div>
           </div>
         </div>
       )}
-      {activeTab === 'config' && (
+
+      {/* PESTAÑA: MI EQUIPO DE TRABAJO (SUPER ADMIN Y GERENTES) */}
+      {activeTab === 'team' && (isSuperAdmin || isGerente) && (
+        <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-sky-600" />
+                Gestión de Colaboradores y Roles por Sucursal
+              </h2>
+              <p className="text-xs text-slate-500">
+                Alta y administración de Gerentes, Agentes Operativos y Operadores IMSS.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Formulario Registrar Colaborador */}
+            <div className="lg:col-span-1 p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <UserCheck className="w-4 h-4 text-sky-600" /> Registrar Nuevo Empleado
+              </h3>
+
+              <form onSubmit={handleCreateTeamMember} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Nombre Completo *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Carlos Mendoza"
+                    value={newTeamName}
+                    onChange={(e) => setNewTeamName(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-medium focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. 2721112233"
+                    value={newTeamPhone}
+                    onChange={(e) => setNewTeamPhone(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-medium focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Correo Electrónico *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="ej. empleado@gatsa.com.mx"
+                    value={newTeamEmail}
+                    onChange={(e) => setNewTeamEmail(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-medium focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Contraseña de Acceso *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="******"
+                    value={newTeamPass}
+                    onChange={(e) => setNewTeamPass(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-medium focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Rol Operativo *</label>
+                  <select
+                    value={newTeamRole}
+                    onChange={(e) => setNewTeamRole(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                  >
+                    {isSuperAdmin && <option value="ROLE_GERENTE_SUCURSAL">Gerente de Sucursal</option>}
+                    <option value="ROLE_AGENTE_COMPLETO">Agente Operativo Completo</option>
+                    <option value="ROLE_OPERADOR_IMSS">Operador Solo Consultas IMSS</option>
+                  </select>
+                </div>
+
+                {isSuperAdmin && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Sucursal Asignada *</label>
+                    <select
+                      value={newTeamBranchCode}
+                      onChange={(e) => setNewTeamBranchCode(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                    >
+                      {branchesList.map((b) => (
+                        <option key={b.id || b.code} value={b.code || b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <UserCheck className="w-4 h-4" /> Registrar Empleado
+                </button>
+              </form>
+            </div>
+
+            {/* Lista del Equipo */}
+            <div className="lg:col-span-2 p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-sky-600" /> Plantilla de Personal ({teamList.length})
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {teamList.map((m) => (
+                  <div key={m.id} className="p-4 bg-white rounded-xl border border-slate-200 space-y-2 shadow-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 bg-sky-50 text-sky-800 border border-sky-200 rounded text-[10px] font-mono font-bold">
+                        {m.role}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500 font-mono">
+                        {m.branchName}
+                      </span>
+                    </div>
+
+                    <h4 className="font-black text-slate-900 text-sm">{m.fullName}</h4>
+                    <p className="text-xs text-slate-500 font-mono">{m.email} • Tel: {m.phone}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PESTAÑA: CONFIGURACIÓN NOTIFICACIONES Y APIS */}
+      {activeTab === 'config' && isSuperAdmin && (
         <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6 max-w-2xl">
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
             <Settings className="w-5 h-5 text-sky-600" />

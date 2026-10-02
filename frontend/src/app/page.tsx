@@ -7,6 +7,7 @@ import api from '../services/api';
 import { GatsaLogo } from '../components/GatsaLogo';
 
 export default function HomePage() {
+  const [branchesList, setBranchesList] = useState<any[]>([]);
   const [quickLead, setQuickLead] = useState({
     fullName: '',
     phone: '',
@@ -15,6 +16,17 @@ export default function HomePage() {
     serviceOfInterest: 'RETIRO_DESEMPLEO_AFORE',
     notes: 'Solicitud rápida desde Landing Page'
   });
+
+  React.useEffect(() => {
+    api.get('/publicsite/branches').then(resp => {
+      if (Array.isArray(resp.data) && resp.data.length > 0) {
+        setBranchesList(resp.data);
+        if (resp.data[0].id) {
+          setQuickLead(prev => ({ ...prev, branch: resp.data[0].id }));
+        }
+      }
+    }).catch(err => console.error('Error cargando sucursales publicas', err));
+  }, []);
   const [submitted, setSubmitted] = useState(false);
   const [isExistingUser, setIsExistingUser] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -274,9 +286,17 @@ export default function HomePage() {
                         onChange={(e) => setQuickLead({ ...quickLead, branch: e.target.value })}
                         className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-600 focus:bg-white transition"
                       >
-                        <option value="ORIZABA_BARRIO_NUEVO">Barrio Nuevo - Orizaba (Av. Independencia #265)</option>
-                        <option value="ORIZABA_CENTRO">Centro Corporativo - Orizaba</option>
-                        <option value="HUATUSCO_CENTRO">Sucursal Huatusco</option>
+                        {branchesList.length > 0 ? (
+                          branchesList.map(b => (
+                            <option key={b.id} value={b.id}>{b.name}</option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="ORIZABA_BARRIO_NUEVO">Barrio Nuevo - Orizaba (Av. Independencia #265)</option>
+                            <option value="ORIZABA_CENTRO">Centro Corporativo - Orizaba</option>
+                            <option value="HUATUSCO_CENTRO">Sucursal Huatusco</option>
+                          </>
+                        )}
                       </select>
                     </div>
 

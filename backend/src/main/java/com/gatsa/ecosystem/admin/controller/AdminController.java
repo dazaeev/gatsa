@@ -33,7 +33,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/admin")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'GERENTE_SUCURSAL', 'AGENTE_COMPLETO', 'OPERADOR_IMSS')")
 public class AdminController {
 
     @Autowired
@@ -62,7 +62,24 @@ public class AdminController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "15") int size,
             @RequestParam(defaultValue = "") String search,
-            @RequestParam(defaultValue = "ALL") String branch) {
+            @RequestParam(defaultValue = "ALL") String branch,
+            org.springframework.security.core.Authentication auth) {
+
+        User currentUser = userRepository.findByEmail(auth.getName())
+                .orElseGet(() -> userRepository.findByPhone(auth.getName()).orElse(null));
+
+        boolean isSuper = currentUser != null && ("ROLE_SUPER_ADMIN".equalsIgnoreCase(currentUser.getRole()) || "ROLE_ADMIN".equalsIgnoreCase(currentUser.getRole()));
+
+        // Si el usuario no es Super Admin / Admin, forzar SIEMPRE el filtro a la sucursal asignada del colaborador
+        String effectiveBranch = branch;
+        if (!isSuper) {
+            if (currentUser != null && currentUser.getBranch() != null) {
+                effectiveBranch = currentUser.getBranch().getCode();
+            } else {
+                // Si el gerente no tiene sucursal asignada en MySQL, retornar página vacía
+                return ResponseEntity.ok(org.springframework.data.domain.Page.empty());
+            }
+        }
 
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
                 page, size, org.springframework.data.domain.Sort.by("createdAt").descending()
@@ -71,17 +88,19 @@ public class AdminController {
         org.springframework.data.domain.Page<Lead> leadPage;
 
         boolean hasSearch = search != null && !search.isBlank();
-        boolean hasBranch = branch != null && !"ALL".equalsIgnoreCase(branch);
+        boolean hasBranch = effectiveBranch != null && !"ALL".equalsIgnoreCase(effectiveBranch);
 
         String cleanSearch = ProcedureUtils.cleanSearchTerm(search);
         Long exactId = ProcedureUtils.parseLeadIdFromSearch(search);
 
         if (hasSearch && hasBranch) {
-            leadPage = leadRepository.searchLeadsByBranch(branch, cleanSearch, exactId, pageable);
+            leadPage = leadRepository.searchLeadsByBranch(effectiveBranch, cleanSearch, exactId, pageable);
+        } else if (hasSearch && !isSuper) {
+            leadPage = leadRepository.searchLeadsByBranch(effectiveBranch, cleanSearch, exactId, pageable);
         } else if (hasSearch) {
             leadPage = leadRepository.searchLeads(cleanSearch, exactId, pageable);
         } else if (hasBranch) {
-            leadPage = leadRepository.findByBranch(branch, pageable);
+            leadPage = leadRepository.findByBranch(effectiveBranch, pageable);
         } else {
             leadPage = leadRepository.findAll(pageable);
         }
@@ -90,6 +109,11 @@ public class AdminController {
             String cleanPhone = l.getPhone() != null ? l.getPhone().replaceAll("\\D", "") : "";
             User u = userRepository.findByPhone(cleanPhone)
                     .orElseGet(() -> (l.getEmail() != null && !l.getEmail().isBlank()) ? userRepository.findByEmail(l.getEmail().trim()).orElse(null) : null);
+
+            // Sincronizar el nombre con la cuenta del usuario en MySQL si existe
+            if (u != null && u.getFullName() != null && !u.getFullName().isBlank()) {
+                l.setFullName(u.getFullName());
+            }
 
             boolean hasDocs = false;
             if (u != null) {
@@ -217,7 +241,22 @@ public class AdminController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "15") int size,
             @RequestParam(defaultValue = "") String search,
-            @RequestParam(defaultValue = "ALL") String branch) {
+            @RequestParam(defaultValue = "ALL") String branch,
+            org.springframework.security.core.Authentication auth) {
+
+        User currentUser = userRepository.findByEmail(auth.getName())
+                .orElseGet(() -> userRepository.findByPhone(auth.getName()).orElse(null));
+
+        boolean isSuper = currentUser != null && ("ROLE_SUPER_ADMIN".equalsIgnoreCase(currentUser.getRole()) || "ROLE_ADMIN".equalsIgnoreCase(currentUser.getRole()));
+
+        String effectiveBranch = branch;
+        if (!isSuper) {
+            if (currentUser != null && currentUser.getBranch() != null) {
+                effectiveBranch = currentUser.getBranch().getCode();
+            } else {
+                return ResponseEntity.ok(org.springframework.data.domain.Page.empty());
+            }
+        }
 
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
         org.springframework.data.domain.Page<User> clientPage = userRepository.findAll(pageable);
@@ -236,10 +275,12 @@ public class AdminController {
                     (client.getPhone() != null && client.getPhone().contains(search)) ||
                     (client.getEmail() != null && client.getEmail().toLowerCase().contains(search.toLowerCase()));
 
-            boolean matchesBranch = "ALL".equalsIgnoreCase(branch) || 
-                    clientLeads.stream().anyMatch(l -> branch.equalsIgnoreCase(l.getBranch()));
+            final String branchToFilter = effectiveBranch;
+            List<Lead> filteredLeads = clientLeads.stream()
+                    .filter(l -> "ALL".equalsIgnoreCase(branchToFilter) || branchToFilter.equalsIgnoreCase(l.getBranch()))
+                    .toList();
 
-            if (!matchesSearch || !matchesBranch) continue;
+            if (!matchesSearch || filteredLeads.isEmpty()) continue;
 
             Map<String, Object> clientGroup = new HashMap<>();
             clientGroup.put("userId", client.getId());
@@ -248,7 +289,7 @@ public class AdminController {
             clientGroup.put("clientEmail", client.getEmail());
 
             List<Map<String, Object>> leadItems = new ArrayList<>();
-            for (Lead leadItem : clientLeads) {
+            for (Lead leadItem : filteredLeads) {
                 Map<String, Object> leadMap = new HashMap<>();
                 leadMap.put("leadId", leadItem.getId());
                 leadMap.put("procedureId", ProcedureUtils.generateProcedureId(leadItem.getId()));

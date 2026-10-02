@@ -55,7 +55,7 @@ public class PortalClientController {
     private EmailService emailService;
 
     @GetMapping("/status")
-    @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN', 'SUPER_ADMIN', 'GERENTE_SUCURSAL', 'AGENTE_COMPLETO', 'OPERADOR_IMSS')")
     public ResponseEntity<Map<String, Object>> getProcedureStatus() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String identifier = auth.getName(); // Email or Phone
@@ -249,7 +249,7 @@ public class PortalClientController {
     }
 
     @GetMapping("/download-document/{id}")
-    @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN', 'SUPER_ADMIN', 'GERENTE_SUCURSAL', 'AGENTE_COMPLETO', 'OPERADOR_IMSS')")
     public ResponseEntity<Resource> downloadDocument(@PathVariable Long id) {
         Document doc = documentRepository.findById(id).orElse(null);
 
@@ -287,7 +287,7 @@ public class PortalClientController {
     }
 
     @GetMapping("/download-deliverable/{leadId}")
-    @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN', 'SUPER_ADMIN', 'GERENTE_SUCURSAL', 'AGENTE_COMPLETO', 'OPERADOR_IMSS')")
     public ResponseEntity<Resource> downloadDeliverable(@PathVariable Long leadId) {
         Lead lead = leadRepository.findById(leadId).orElse(null);
 

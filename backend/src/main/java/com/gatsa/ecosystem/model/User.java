@@ -42,8 +42,12 @@ public class User {
     @Column(nullable = false, length = 100)
     private String fullName;
 
-    @Column(nullable = false, length = 30)
-    private String role; // ROLE_LEAD, ROLE_CLIENT, ROLE_PARTNER, ROLE_AGENT, ROLE_ADMIN
+    @Column(nullable = false, length = 50)
+    private String role; // ROLE_SUPER_ADMIN, ROLE_GERENTE_SUCURSAL, ROLE_AGENTE_COMPLETO, ROLE_OPERADOR_IMSS, ROLE_CLIENT, ROLE_PARTNER
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "branch_id")
+    private Branch branch;
 
     @Builder.Default
     @Column(nullable = false)
