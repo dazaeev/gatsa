@@ -1,5 +1,36 @@
 package com.gatsa.ecosystem.admin.controller;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
+
 import com.gatsa.ecosystem.config.model.SystemConfiguration;
 import com.gatsa.ecosystem.config.repository.SystemConfigurationRepository;
 import com.gatsa.ecosystem.model.User;
@@ -12,24 +43,6 @@ import com.gatsa.ecosystem.publicsite.repository.LeadRepository;
 import com.gatsa.ecosystem.repository.UserRepository;
 import com.gatsa.ecosystem.util.EmailService;
 import com.gatsa.ecosystem.util.ProcedureUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.*;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/admin")
@@ -382,6 +395,50 @@ public class AdminController {
         return st;
     }
 
+    private String loginAndRefreshJordanCookie() {
+        try {
+            String username = configRepository.findByConfigKey("IMSS_JORDAN_USER")
+                    .map(SystemConfiguration::getConfigValue)
+                    .orElse("everth");
+
+            String password = configRepository.findByConfigKey("IMSS_JORDAN_PASS")
+                    .map(SystemConfiguration::getConfigValue)
+                    .orElse("Everth01*");
+
+            RestTemplate restTemplate = new RestTemplate();
+            String loginUrl = "https://jordan-digital.com/login";
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+            org.springframework.util.MultiValueMap<String, String> map = new org.springframework.util.LinkedMultiValueMap<>();
+            map.add("username", username);
+            map.add("password", password);
+
+            HttpEntity<org.springframework.util.MultiValueMap<String, String>> request = new HttpEntity<>(map, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(loginUrl, request, String.class);
+
+            List<String> cookies = response.getHeaders().get(HttpHeaders.SET_COOKIE);
+            if (cookies != null && !cookies.isEmpty()) {
+                for (String c : cookies) {
+                    if (c.contains("session=")) {
+                        String cookieValue = c.split(";")[0];
+                        SystemConfiguration config = configRepository.findByConfigKey("IMSS_JORDAN_COOKIE")
+                                .orElse(SystemConfiguration.builder().configKey("IMSS_JORDAN_COOKIE").build());
+                        config.setConfigValue(cookieValue.trim());
+                        config.setDescription("Cookie de sesión para la API externa Jordan Digital IMSS Semanas");
+                        configRepository.save(config);
+                        System.out.println(">>> COOKIE DE JORDAN DIGITAL RENOVADA AUTOMÁTICAMENTE: " + cookieValue + " <<<");
+                        return cookieValue.trim();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error durante auto-login en Jordan Digital: " + e.getMessage());
+        }
+        return null;
+    }
+
     @GetMapping("/config")
     public ResponseEntity<Map<String, String>> getConfig() {
         String adminEmail = configRepository.findByConfigKey("ADMIN_NOTIFICATION_EMAIL")
@@ -392,11 +449,72 @@ public class AdminController {
                 .map(SystemConfiguration::getConfigValue)
                 .orElse("");
 
+        String imssUser = configRepository.findByConfigKey("IMSS_JORDAN_USER")
+                .map(SystemConfiguration::getConfigValue)
+                .orElse("everth");
+
+        String imssPass = configRepository.findByConfigKey("IMSS_JORDAN_PASS")
+                .map(SystemConfiguration::getConfigValue)
+                .orElse("Everth01*");
+
         Map<String, String> resp = new HashMap<>();
         resp.put("adminEmail", adminEmail);
         resp.put("imssCookie", imssCookie);
+        resp.put("imssUser", imssUser);
+        resp.put("imssPass", imssPass);
 
         return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/config")
+    public ResponseEntity<Map<String, Object>> updateConfig(@RequestBody Map<String, String> request) {
+        String newEmail = request.get("adminEmail");
+        if (newEmail != null && !newEmail.isBlank()) {
+            SystemConfiguration config = configRepository.findByConfigKey("ADMIN_NOTIFICATION_EMAIL")
+                    .orElse(SystemConfiguration.builder().configKey("ADMIN_NOTIFICATION_EMAIL").build());
+            config.setConfigValue(newEmail.trim());
+            config.setDescription("Correo de notificaciones administrativas");
+            configRepository.save(config);
+        }
+
+        String imssUser = request.get("imssUser");
+        if (imssUser != null) {
+            SystemConfiguration config = configRepository.findByConfigKey("IMSS_JORDAN_USER")
+                    .orElse(SystemConfiguration.builder().configKey("IMSS_JORDAN_USER").build());
+            config.setConfigValue(imssUser.trim());
+            config.setDescription("Usuario para la API de Jordan Digital");
+            configRepository.save(config);
+        }
+
+        String imssPass = request.get("imssPass");
+        if (imssPass != null) {
+            SystemConfiguration config = configRepository.findByConfigKey("IMSS_JORDAN_PASS")
+                    .orElse(SystemConfiguration.builder().configKey("IMSS_JORDAN_PASS").build());
+            config.setConfigValue(imssPass.trim());
+            config.setDescription("Contraseña para la API de Jordan Digital");
+            configRepository.save(config);
+        }
+
+        String imssCookie = request.get("imssCookie");
+        if (imssCookie != null) {
+            SystemConfiguration config = configRepository.findByConfigKey("IMSS_JORDAN_COOKIE")
+                    .orElse(SystemConfiguration.builder().configKey("IMSS_JORDAN_COOKIE").build());
+            config.setConfigValue(imssCookie.trim());
+            config.setDescription("Cookie de sesión para la API externa Jordan Digital IMSS Semanas");
+            configRepository.save(config);
+        }
+
+        return ResponseEntity.ok(Map.of("success", true, "message", "Configuración del sistema actualizada en MySQL."));
+    }
+
+    @PostMapping("/imss/login-refresh")
+    public ResponseEntity<Map<String, Object>> forceJordanLoginRefresh() {
+        String newCookie = loginAndRefreshJordanCookie();
+        if (newCookie != null && !newCookie.isBlank()) {
+            return ResponseEntity.ok(Map.of("success", true, "cookie", newCookie, "message", "¡Autenticación en Jordan Digital exitosa! Nueva cookie obtenida."));
+        } else {
+            return ResponseEntity.status(500).body(Map.of("success", false, "message", "Error al autenticar con las credenciales de Jordan Digital. Verifique usuario y contraseña."));
+        }
     }
 
     @PostMapping("/imss/cookie")
@@ -425,6 +543,10 @@ public class AdminController {
                 .map(SystemConfiguration::getConfigValue)
                 .orElse("");
 
+        if (storedCookie.isBlank()) {
+            storedCookie = loginAndRefreshJordanCookie();
+        }
+
         RestTemplate restTemplate = new RestTemplate();
 
         try {
@@ -432,7 +554,7 @@ public class AdminController {
             String procesarUrl = "https://jordan-digital.com/SemanasMultiple/procesar";
             HttpHeaders headers1 = new HttpHeaders();
             headers1.setContentType(MediaType.APPLICATION_JSON);
-            if (!storedCookie.isBlank()) {
+            if (storedCookie != null && !storedCookie.isBlank()) {
                 headers1.set("Cookie", storedCookie);
             }
 
@@ -442,11 +564,37 @@ public class AdminController {
             req1.put("autorizacion", "1");
 
             HttpEntity<Map<String, Object>> entity1 = new HttpEntity<>(req1, headers1);
-            ResponseEntity<Map> resp1 = restTemplate.postForEntity(procesarUrl, entity1, Map.class);
+            ResponseEntity<Map> resp1 = null;
 
-            // Verificar si devolvió sid o si requiere cookie
-            if (resp1.getBody() != null && resp1.getBody().containsKey("error") && resp1.getBody().get("error").toString().contains("expirada")) {
-                return ResponseEntity.status(401).body(Map.of("success", false, "message", "Cookie de sesión Jordan expirada. Actualícela en la pestaña Configuración."));
+            try {
+                resp1 = restTemplate.postForEntity(procesarUrl, entity1, Map.class);
+            } catch (org.springframework.web.client.HttpStatusCodeException e) {
+                if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403 || e.getStatusCode().value() == 302) {
+                    System.out.println(">>> HTTP " + e.getStatusCode().value() + " RECIBIDO DE JORDAN DIGITAL. INICIANDO AUTO-LOGIN... <<<");
+                    String newCookie = loginAndRefreshJordanCookie();
+                    if (newCookie != null && !newCookie.isBlank()) {
+                        headers1.set("Cookie", newCookie);
+                        HttpEntity<Map<String, Object>> retryEntity = new HttpEntity<>(req1, headers1);
+                        resp1 = restTemplate.postForEntity(procesarUrl, retryEntity, Map.class);
+                        storedCookie = newCookie;
+                    } else {
+                        throw e;
+                    }
+                } else {
+                    throw e;
+                }
+            }
+
+            // Si la respuesta en JSON contiene error de sesión expirada
+            if (resp1 != null && resp1.getBody() != null && resp1.getBody().containsKey("error") && resp1.getBody().get("error").toString().toLowerCase().contains("expirada")) {
+                System.out.println(">>> COOKIE EXPIRADA EN JSON DE JORDAN DIGITAL. INICIANDO AUTO-LOGIN... <<<");
+                String newCookie = loginAndRefreshJordanCookie();
+                if (newCookie != null && !newCookie.isBlank()) {
+                    headers1.set("Cookie", newCookie);
+                    HttpEntity<Map<String, Object>> retryEntity = new HttpEntity<>(req1, headers1);
+                    resp1 = restTemplate.postForEntity(procesarUrl, retryEntity, Map.class);
+                    storedCookie = newCookie;
+                }
             }
 
             // Extraer SID de la respuesta de /procesar
@@ -704,17 +852,5 @@ public class AdminController {
         return null;
     }
 
-    @PostMapping("/config")
-    public ResponseEntity<Map<String, Object>> updateConfig(@RequestBody Map<String, String> request) {
-        String newEmail = request.get("adminEmail");
-        if (newEmail != null && !newEmail.isBlank()) {
-            SystemConfiguration config = configRepository.findByConfigKey("ADMIN_NOTIFICATION_EMAIL")
-                    .orElse(SystemConfiguration.builder().configKey("ADMIN_NOTIFICATION_EMAIL").build());
-            config.setConfigValue(newEmail.trim());
-            config.setDescription("Correo de notificaciones administrativas");
-            configRepository.save(config);
-        }
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Configuración de notificaciones actualizada en MySQL."));
-    }
 }

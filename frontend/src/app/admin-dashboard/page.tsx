@@ -140,6 +140,9 @@ export default function AdminDashboardPage() {
   const [imssCurp, setImssCurp] = useState<string>('');
   const [imssTipoCorreo, setImssTipoCorreo] = useState<string>('hotmail');
   const [imssCookie, setImssCookie] = useState<string>('');
+  const [imssUser, setImssUser] = useState<string>('everth');
+  const [imssPass, setImssPass] = useState<string>('Everth01*');
+  const [loadingJordanLogin, setLoadingJordanLogin] = useState<boolean>(false);
   const [loadingImss, setLoadingImss] = useState<boolean>(false);
   const [imssResult, setImssResult] = useState<any>(null);
   const [imssHistory, setImssHistory] = useState<any[]>([]);
@@ -307,6 +310,8 @@ export default function AdminDashboardPage() {
       if (configResp.data) {
         if (configResp.data.adminEmail) setAdminEmail(configResp.data.adminEmail);
         if (configResp.data.imssCookie) setImssCookie(configResp.data.imssCookie);
+        if (configResp.data.imssUser) setImssUser(configResp.data.imssUser);
+        if (configResp.data.imssPass) setImssPass(configResp.data.imssPass);
       }
     } catch (error: any) {
       console.warn('Sesión caducada o token inválido en panel de administración');
@@ -459,13 +464,33 @@ export default function AdminDashboardPage() {
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/admin/config', { adminEmail });
-      await api.post('/admin/imss/cookie', { cookie: imssCookie });
+      await api.post('/admin/config', { 
+        adminEmail,
+        imssUser,
+        imssPass,
+        imssCookie
+      });
       setConfigSuccess(true);
       setTimeout(() => setConfigSuccess(false), 3000);
     } catch (err) {
       console.error('Error guardando configuración', err);
       alert('Error guardando la configuración de notificaciones en BD.');
+    }
+  };
+
+  const handleForceJordanLogin = async () => {
+    setLoadingJordanLogin(true);
+    try {
+      const resp = await api.post('/admin/imss/login-refresh');
+      if (resp.data && resp.data.cookie) {
+        setImssCookie(resp.data.cookie);
+        alert('¡Autenticación con Jordan Digital exitosa! La cookie ha sido renovada.');
+      }
+    } catch (err: any) {
+      console.error('Error probando login Jordan', err);
+      alert(err.response?.data?.message || 'Error al autenticar con Jordan Digital. Verifica usuario y contraseña.');
+    } finally {
+      setLoadingJordanLogin(false);
     }
   };
 
@@ -1739,9 +1764,45 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
+            <div className="pt-2 border-t border-slate-100 space-y-3">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Credenciales de Proveedor API Jordan Digital</h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Usuario Jordan Digital</label>
+                  <input
+                    type="text"
+                    value={imssUser}
+                    onChange={(e) => setImssUser(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Contraseña Jordan Digital</label>
+                  <input
+                    type="password"
+                    value={imssPass}
+                    onChange={(e) => setImssPass(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleForceJordanLogin}
+                disabled={loadingJordanLogin}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                {loadingJordanLogin ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5 text-sky-400" />}
+                {loadingJordanLogin ? 'Autenticando en Jordan...' : '🔑 Probar Credenciales y Generar Cookie Actual'}
+              </button>
+            </div>
+
             <div className="pt-2 border-t border-slate-100">
               <label className="block text-xs font-bold text-slate-800 mb-1">
-                Cookie de Sesión Jordan Digital (Llave: IMSS_JORDAN_COOKIE)
+                Cookie de Sesión Guardada (Llave: IMSS_JORDAN_COOKIE)
               </label>
               <div className="relative">
                 <textarea
