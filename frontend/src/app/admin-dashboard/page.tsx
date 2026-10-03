@@ -1483,6 +1483,82 @@ export default function AdminDashboardPage() {
               )}
             </div>
           </div>
+
+          {/* SECCIÓN DE CONTROL DE ARCHIVOS Y AUDITORÍA DE CONSULTAS DE SEMANAS IMSS */}
+          <div className="pt-6 border-t border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-sky-600" /> Registro de Auditoría e Historial de Consultas ({imssHistory.length})
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Historial de consultas ejecutadas por los empleados de tu sucursal.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fetchImssHistory}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCcw className="w-3.5 h-3.5" /> Actualizar Lista
+              </button>
+            </div>
+
+            {imssHistory.length > 0 ? (
+              <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 shadow-xs">
+                <table className="w-full text-left text-xs text-slate-700 border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider bg-slate-50">
+                      <th className="py-3 px-4">CURP / Folio</th>
+                      <th className="py-3 px-4">Empleado Operador</th>
+                      <th className="py-3 px-4">Sucursal</th>
+                      <th className="py-3 px-4">Fecha y Hora</th>
+                      <th className="py-3 px-4 text-right">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {imssHistory.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 transition">
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                          <span className="text-[10px] text-sky-600 block">{item.sid ? `SID: ${item.sid}` : 'IMSS'}</span>
+                          {item.curp || item.fileName}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-slate-800">
+                          {item.userFullName || 'Operador GATSA'}
+                          {item.userRole && (
+                            <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                              {item.userRole}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="px-2 py-0.5 bg-sky-50 text-sky-800 border border-sky-200 rounded font-bold text-[10px]">
+                            {item.branchCode || 'MATRIZ'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-slate-500 text-[11px]">
+                          {item.createdAt ? new Date(item.createdAt).toLocaleString('es-MX') : 'Reciente'}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadAndInspectImssPdf(item.fileName, `Archivo IMSS ${item.curp || item.fileName}`)}
+                            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[11px] transition inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-sky-400" /> Abrir Visor
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs italic">
+                No hay registros de auditoría de consultas IMSS para esta sucursal.
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -37,7 +37,9 @@ import com.gatsa.ecosystem.model.User;
 import com.gatsa.ecosystem.portalclient.model.Document;
 import com.gatsa.ecosystem.portalclient.model.ProcedureDictamen;
 import com.gatsa.ecosystem.portalclient.repository.DocumentRepository;
+import com.gatsa.ecosystem.model.ImssConsultationLog;
 import com.gatsa.ecosystem.portalclient.repository.ProcedureDictamenRepository;
+import com.gatsa.ecosystem.repository.ImssConsultationLogRepository;
 import com.gatsa.ecosystem.publicsite.model.Lead;
 import com.gatsa.ecosystem.publicsite.repository.LeadRepository;
 import com.gatsa.ecosystem.repository.UserRepository;
@@ -60,6 +62,9 @@ public class AdminController {
 
     @Autowired
     private SystemConfigurationRepository configRepository;
+
+    @Autowired
+    private ImssConsultationLogRepository imssLogRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -531,13 +536,16 @@ public class AdminController {
     }
 
     @PostMapping("/imss/consultar-semanas")
-    public ResponseEntity<Map<String, Object>> consultarSemanasImss(@RequestBody Map<String, String> body) {
+    public ResponseEntity<Map<String, Object>> consultarSemanasImss(@RequestBody Map<String, String> body, org.springframework.security.core.Authentication auth) {
         String curp = body.get("curp");
         String tipoCorreo = body.getOrDefault("tipoCorreo", "hotmail");
 
         if (curp == null || curp.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "La CURP es requerida"));
         }
+
+        User currentUser = userRepository.findByEmail(auth.getName())
+                .orElseGet(() -> userRepository.findByPhone(auth.getName()).orElse(null));
 
         String storedCookie = configRepository.findByConfigKey("IMSS_JORDAN_COOKIE")
                 .map(SystemConfiguration::getConfigValue)
@@ -688,6 +696,26 @@ public class AdminController {
                 } catch (Exception e) {
                     System.err.println("Advertencia guardando copia local de semanas IMSS: " + e.getMessage());
                 }
+
+                // Guardar registro de auditoría en MySQL
+                if (currentUser != null) {
+                    try {
+                        ImssConsultationLog log = ImssConsultationLog.builder()
+                                .curp(curp.trim().toUpperCase())
+                                .sid(sid)
+                                .pdfFileName(pdfFileName)
+                                .user(currentUser)
+                                .userFullName(currentUser.getFullName())
+                                .userRole(currentUser.getRole())
+                                .branchCode(currentUser.getBranch() != null ? currentUser.getBranch().getCode() : "MATRIZ")
+                                .build();
+
+                        imssLogRepository.save(log);
+                        System.out.println(">>> REGISTRO DE AUDITORÍA IMSS CREADO EN MYSQL PARA USUARIO: " + currentUser.getFullName() + " <<<");
+                    } catch (Exception e) {
+                        System.err.println("Advertencia guardando log de auditoría IMSS: " + e.getMessage());
+                    }
+                }
             }
 
             return ResponseEntity.ok(Map.of(
@@ -768,34 +796,36 @@ public class AdminController {
     }
 
     @GetMapping("/imss/history")
-    public ResponseEntity<List<Map<String, Object>>> getImssFilesHistory() {
-        List<Map<String, Object>> filesList = new ArrayList<>();
-        try {
-            Path uploadPath = Paths.get(System.getProperty("user.dir"), "uploads", "imss_semanas");
-            if (Files.exists(uploadPath)) {
-                try (var stream = Files.list(uploadPath)) {
-                    stream.filter(Files::isRegularFile).forEach(path -> {
-                        try {
-                            String fName = path.getFileName().toString();
-                            long fSize = Files.size(path);
-                            long lastModified = Files.getLastModifiedTime(path).toMillis();
-                            
-                            Map<String, Object> fileInfo = new HashMap<>();
-                            fileInfo.put("fileName", fName);
-                            fileInfo.put("fileSize", fSize);
-                            fileInfo.put("updatedAt", lastModified);
-                            fileInfo.put("downloadUrl", "/api/v1/admin/imss/download-pdf?file=" + fName);
-                            filesList.add(fileInfo);
-                        } catch (IOException ignored) {}
-                    });
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Error listando historial de semanas IMSS: " + e.getMessage());
+    public ResponseEntity<List<Map<String, Object>>> getImssFilesHistory(org.springframework.security.core.Authentication auth) {
+        User currentUser = userRepository.findByEmail(auth.getName())
+                .orElseGet(() -> userRepository.findByPhone(auth.getName()).orElse(null));
+
+        boolean isSuper = currentUser != null && ("ROLE_SUPER_ADMIN".equalsIgnoreCase(currentUser.getRole()) || "ROLE_ADMIN".equalsIgnoreCase(currentUser.getRole()));
+
+        List<ImssConsultationLog> logs;
+        if (isSuper) {
+            logs = imssLogRepository.findAllByOrderByCreatedAtDesc();
+        } else if (currentUser != null && currentUser.getBranch() != null) {
+            logs = imssLogRepository.findByBranchCodeOrderByCreatedAtDesc(currentUser.getBranch().getCode());
+        } else {
+            logs = List.of();
         }
 
-        filesList.sort((a, b) -> Long.compare((Long) b.get("updatedAt"), (Long) a.get("updatedAt")));
-        return ResponseEntity.ok(filesList);
+        List<Map<String, Object>> result = logs.stream().map(log -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", log.getId());
+            map.put("curp", log.getCurp());
+            map.put("sid", log.getSid());
+            map.put("fileName", log.getPdfFileName());
+            map.put("userFullName", log.getUserFullName());
+            map.put("userRole", log.getUserRole());
+            map.put("branchCode", log.getBranchCode());
+            map.put("createdAt", log.getCreatedAt().toString());
+            map.put("downloadUrl", "/api/v1/admin/imss/download-pdf?file=" + log.getPdfFileName());
+            return map;
+        }).toList();
+
+        return ResponseEntity.ok(result);
     }
 
     private String extractArchivoGenerado(Map<?, ?> respBody) {
