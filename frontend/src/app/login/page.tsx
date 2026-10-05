@@ -94,7 +94,7 @@ function LoginContent() {
           </div>
         )}
 
-        <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
+        <form onSubmit={handleLogin} suppressHydrationWarning autoComplete="off" className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-800 mb-1">
               Correo Electrónico o Teléfono Celular *
@@ -104,6 +104,7 @@ function LoginContent() {
               <input
                 type="text"
                 required
+                suppressHydrationWarning
                 autoComplete="off"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
@@ -120,6 +121,7 @@ function LoginContent() {
               <input
                 type="password"
                 required
+                suppressHydrationWarning
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

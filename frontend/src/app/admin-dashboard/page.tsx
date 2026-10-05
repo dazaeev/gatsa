@@ -670,10 +670,10 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
+    <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-4 sm:py-12 space-y-4 sm:space-y-8">
       
       {/* Admin Header */}
-      <div className="p-8 bg-slate-900 text-white rounded-2xl shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+      <div className="p-4 sm:p-8 bg-slate-900 text-white rounded-2xl shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-sky-500/20 border border-sky-400/30 text-sky-300 text-xs font-semibold rounded-full mb-2">
             <ShieldAlert className="w-4 h-4 text-sky-400" /> Panel de Control Administrador GATSA
@@ -681,13 +681,13 @@ export default function AdminDashboardPage() {
               {APP_VERSION}
             </span>
           </div>
-          <h1 className="text-2xl font-black text-white">Gestión Centralizada de Solicitudes y Documentos</h1>
+          <h1 className="text-xl sm:text-2xl font-black text-white">Gestión Centralizada de Solicitudes y Documentos</h1>
           <p className="text-xs text-slate-400 mt-1">Supervisión en tiempo real de expedientes, INE cargados y notificaciones en BD.</p>
         </div>
 
-        <div className="px-4 py-2 bg-slate-800 rounded-xl border border-slate-700 text-center">
+        <div className="px-4 py-2 bg-slate-800 rounded-xl border border-slate-700 text-center w-full sm:w-auto">
           <span className="text-[11px] text-slate-400 block font-semibold uppercase">Total Solicitudes</span>
-          <span className="text-xl font-bold text-sky-400">{totalLeadsCount} Registros</span>
+          <span className="text-lg sm:text-xl font-bold text-sky-400">{totalLeadsCount} Registros</span>
         </div>
       </div>
 
@@ -722,39 +722,39 @@ export default function AdminDashboardPage() {
 
       </div>
 
-      {/* Selector de Pestañas del Admin */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2 text-xs font-bold">
+      {/* Selector de Pestañas del Admin - Touch Friendly Scroll */}
+      <div className="flex overflow-x-auto gap-2 border-b border-slate-200 pb-2 text-xs font-bold no-scrollbar">
         {!isOperadorImss && (
           <button
             type="button"
             onClick={() => setActiveTab('leads')}
-            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl transition whitespace-nowrap flex items-center gap-2 ${
               activeTab === 'leads' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <Users className="w-4 h-4" /> Solicitudes y Prospectos ({groupedLeadsList.length} Clientes)
+            <Users className="w-4 h-4 shrink-0" /> Solicitudes ({groupedLeadsList.length})
           </button>
         )}
 
         <button
           type="button"
           onClick={() => setActiveTab('imss')}
-          className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl transition whitespace-nowrap flex items-center gap-2 ${
             activeTab === 'imss' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <Award className="w-4 h-4" /> Consulta Semanas Cotizadas IMSS
+          <Award className="w-4 h-4 shrink-0" /> Semanas IMSS
         </button>
 
         {!isOperadorImss && (
           <button
             type="button"
             onClick={() => setActiveTab('documents')}
-            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl transition whitespace-nowrap flex items-center gap-2 ${
               activeTab === 'documents' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <FileText className="w-4 h-4" /> Expedientes y Documentos ({filteredClientGroups.length} Clientes)
+            <FileText className="w-4 h-4 shrink-0" /> Expedientes ({filteredClientGroups.length})
           </button>
         )}
 
@@ -762,11 +762,11 @@ export default function AdminDashboardPage() {
           <button
             type="button"
             onClick={() => setActiveTab('branches')}
-            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl transition whitespace-nowrap flex items-center gap-2 ${
               activeTab === 'branches' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <Building2 className="w-4 h-4" /> Gestión de Sucursales ({branchesList.length})
+            <Building2 className="w-4 h-4 shrink-0" /> Sucursales ({branchesList.length})
           </button>
         )}
 
@@ -774,11 +774,11 @@ export default function AdminDashboardPage() {
           <button
             type="button"
             onClick={() => setActiveTab('team')}
-            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl transition whitespace-nowrap flex items-center gap-2 ${
               activeTab === 'team' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <UserCheck className="w-4 h-4" /> Mi Equipo de Trabajo ({teamList.length})
+            <UserCheck className="w-4 h-4 shrink-0" /> Mi Equipo ({teamList.length})
           </button>
         )}
 
@@ -786,11 +786,11 @@ export default function AdminDashboardPage() {
           <button
             type="button"
             onClick={() => setActiveTab('config')}
-            className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 ${
+            className={`px-4 py-2.5 rounded-xl transition whitespace-nowrap flex items-center gap-2 ${
               activeTab === 'config' ? 'bg-sky-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <Settings className="w-4 h-4" /> Configuración API & Notificaciones
+            <Settings className="w-4 h-4 shrink-0" /> Configuración API
           </button>
         )}
       </div>
@@ -1302,11 +1302,11 @@ export default function AdminDashboardPage() {
 
       {/* PESTAÑA DE CONSULTA SEMANAS COTIZADAS IMSS (JORDAN DIGITAL) */}
       {activeTab === 'imss' && (
-        <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+        <div className="p-4 sm:p-8 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-4 sm:space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Award className="w-5 h-5 text-sky-600" />
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Award className="w-5 h-5 text-sky-600 shrink-0" />
                 Consulta Automatizada de Semanas Cotizadas IMSS
               </h2>
               <p className="text-xs text-slate-500">
@@ -1315,9 +1315,9 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
             {/* Formulario de Consulta Directa */}
-            <div className="lg:col-span-1 p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+            <div className="lg:col-span-1 p-4 sm:p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
               <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                 <Search className="w-4 h-4 text-sky-600" /> Ejecutar Consulta
               </h3>
@@ -1976,8 +1976,8 @@ export default function AdminDashboardPage() {
 
       {/* MODAL VISUALIZADOR SEGURO DE DOCUMENTO PARA ADMINISTRADOR */}
       {viewModalOpen && selectedDocInfo && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full p-6 space-y-4 relative animate-in fade-in zoom-in-95 max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full p-4 sm:p-6 space-y-4 relative animate-in fade-in zoom-in-95 max-h-[95vh] flex flex-col">
             
             <button
               type="button"
@@ -1985,24 +1985,24 @@ export default function AdminDashboardPage() {
                 setViewModalOpen(false);
                 if (docBlobUrl) URL.revokeObjectURL(docBlobUrl);
               }}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition"
+              className="absolute top-3 right-3 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="p-2.5 bg-sky-50 text-sky-600 rounded-xl font-bold">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3 pr-8">
+              <div className="p-2.5 bg-sky-50 text-sky-600 rounded-xl font-bold shrink-0">
                 <FileCheck2 className="w-6 h-6" />
               </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-lg">{selectedDocInfo.docType}</h3>
-                <p className="text-xs text-slate-500">
+              <div className="truncate">
+                <h3 className="font-bold text-slate-900 text-sm sm:text-lg truncate">{selectedDocInfo.docType}</h3>
+                <p className="text-xs text-slate-500 truncate">
                   Cliente: <strong>{selectedDocInfo.clientName}</strong>
                 </p>
               </div>
             </div>
 
-            <div className="flex-1 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden min-h-[350px] flex items-center justify-center relative">
+            <div className="flex-1 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden min-h-[280px] sm:min-h-[350px] flex items-center justify-center relative">
               {loadingDoc ? (
                 <div className="text-center py-12 text-slate-500 text-xs space-y-2">
                   <Clock className="w-6 h-6 animate-spin mx-auto text-sky-600" />
@@ -2011,7 +2011,7 @@ export default function AdminDashboardPage() {
               ) : docBlobUrl ? (
                 <iframe
                   src={docBlobUrl}
-                  className="w-full h-[450px] rounded-lg border-0"
+                  className="w-full h-[60vh] sm:h-[450px] rounded-lg border-0"
                   title={selectedDocInfo.fileName}
                 />
               ) : (

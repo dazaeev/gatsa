@@ -225,12 +225,13 @@ export default function HomePage() {
                     </div>
                   </div>
                 ) : (
-                  <form onSubmit={handleQuickLeadSubmit} className="space-y-4">
+                  <form onSubmit={handleQuickLeadSubmit} suppressHydrationWarning className="space-y-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">Nombre Completo *</label>
                       <input
                         type="text"
                         required
+                        suppressHydrationWarning
                         placeholder="Ej. Nazario Dazaeev"
                         value={quickLead.fullName}
                         onChange={(e) => setQuickLead({ ...quickLead, fullName: e.target.value })}
@@ -243,6 +244,7 @@ export default function HomePage() {
                       <input
                         type="tel"
                         required
+                        suppressHydrationWarning
                         minLength={10}
                         maxLength={10}
                         pattern="\d{10}"
@@ -258,6 +260,7 @@ export default function HomePage() {
                       <input
                         type="email"
                         required
+                        suppressHydrationWarning
                         placeholder="ejemplo@correo.com"
                         value={quickLead.email}
                         onChange={(e) => setQuickLead({ ...quickLead, email: e.target.value })}
@@ -269,6 +272,7 @@ export default function HomePage() {
                       <label className="block text-xs font-semibold text-slate-700 mb-1">Trámite o Servicio</label>
                       <select
                         value={quickLead.serviceOfInterest}
+                        suppressHydrationWarning
                         onChange={(e) => setQuickLead({ ...quickLead, serviceOfInterest: e.target.value })}
                         className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-600 focus:bg-white transition"
                       >
@@ -283,6 +287,7 @@ export default function HomePage() {
                       <label className="block text-xs font-semibold text-slate-700 mb-1">Sucursal Preferida</label>
                       <select
                         value={quickLead.branch}
+                        suppressHydrationWarning
                         onChange={(e) => setQuickLead({ ...quickLead, branch: e.target.value })}
                         className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-600 focus:bg-white transition"
                       >

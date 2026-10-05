@@ -237,17 +237,44 @@ export const Navbar: React.FC = () => {
           </Link>
           <div className="pt-4 border-t border-slate-200 space-y-2">
             {isAuthenticated ? (
-              <button
-                type="button"
-                onClick={() => {
-                  logout();
-                  setMobileMenuOpen(false);
-                  router.push('/login');
-                }}
-                className="w-full text-left px-3 py-2 text-rose-600 font-bold"
-              >
-                Cerrar Sesión ({getDisplayName()})
-              </button>
+              <div className="space-y-2">
+                <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-900 flex items-center justify-between">
+                  <span>{getDisplayName()}</span>
+                  <span className="text-sky-600 font-mono text-[10px] uppercase">{getRoleLabel()}</span>
+                </div>
+
+                {(user?.role === 'ROLE_SUPER_ADMIN' || user?.role === 'ROLE_ADMIN' || user?.role === 'ROLE_GERENTE_SUCURSAL' || user?.role === 'ROLE_AGENTE_COMPLETO' || user?.role === 'ROLE_OPERADOR_IMSS') && (
+                  <Link
+                    href="/admin-dashboard"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block text-center w-full py-2.5 bg-slate-900 text-white font-bold rounded-lg text-xs shadow flex items-center justify-center gap-2"
+                  >
+                    <ShieldAlert className="w-4 h-4 text-sky-400" /> Panel Operativo
+                  </Link>
+                )}
+
+                {user?.role === 'ROLE_CLIENT' && (
+                  <Link
+                    href="/portal-cliente"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block text-center w-full py-2.5 bg-sky-600 text-white font-bold rounded-lg text-xs shadow"
+                  >
+                    Mi Expediente
+                  </Link>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout();
+                    setMobileMenuOpen(false);
+                    router.push('/login');
+                  }}
+                  className="w-full text-left px-3 py-2 text-rose-600 text-xs font-bold hover:bg-rose-50 rounded-lg transition"
+                >
+                  Cerrar Sesión
+                </button>
+              </div>
             ) : (
               <Link
                 href="/login"

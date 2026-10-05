@@ -28,6 +28,11 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .orElseGet(() -> userRepository.findByPhone(emailOrPhone)
                         .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con correo o teléfono: " + emailOrPhone)));
 
+        String assignedRole = user.getRole();
+        if (assignedRole != null && !assignedRole.startsWith("ROLE_")) {
+            assignedRole = "ROLE_" + assignedRole;
+        }
+
         return new org.springframework.security.core.userdetails.User(
                 emailOrPhone, // Mantiene el identificador ingresado por el usuario (email o teléfono)
                 user.getPassword(),
@@ -35,7 +40,7 @@ public class CustomUserDetailsService implements UserDetailsService {
                 true,
                 true,
                 true,
-                Collections.singletonList(new SimpleGrantedAuthority(user.getRole()))
+                Collections.singletonList(new SimpleGrantedAuthority(assignedRole))
         );
     }
 }
