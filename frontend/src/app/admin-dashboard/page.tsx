@@ -2,11 +2,13 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { ShieldAlert, Users, Phone, Search, FileText, Settings, Save, CheckCircle2, Lock, LogIn, ArrowRight, Eye, Download, X, FileCheck2, Clock, Layers, Building2, Mail, Edit3, ChevronLeft, ChevronRight, Award, RefreshCcw, Trash2, UserCheck, ChevronDown, ChevronUp, LayoutList, User } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { formatProcedureId } from '@/utils/procedureUtils';
 import { APP_VERSION } from '@/config/version';
+import { ConfirmModal } from '@/components/ConfirmModal';
 
 interface Lead {
   id: number;
@@ -150,6 +152,22 @@ export default function AdminDashboardPage() {
   // MODO VISTA: 'grouped' (Agrupada por Cliente) o 'flat' (Lista de todos los folios)
   const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
   const [expandedClientKeys, setExpandedClientKeys] = useState<Record<string, boolean>>({});
+
+  // Confirm Modal State
+  const [confirmModalState, setConfirmModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'primary';
+    loading?: boolean;
+    action?: () => Promise<void> | void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+  });
 
   // PAGINACIÓN OPCIÓN A (SERVER-SIDE)
   const [leadPage, setLeadPage] = useState<number>(1);
@@ -385,12 +403,14 @@ export default function AdminDashboardPage() {
         },
       });
 
-      alert(`¡Dictamen guardado para ${targetProcedureId}! El estatus cambió a '${newStatus}' y se notificó al cliente.`);
+      toast.success('¡Dictamen guardado correctamente!', {
+        description: `Para ${targetProcedureId}. El estatus cambió a '${newStatus}' y se notificó al cliente.`,
+      });
       setDictamenModalOpen(false);
       fetchAdminData();
     } catch (err) {
       console.error('Error guardando dictamen', err);
-      alert('Error guardando dictamen en el servidor.');
+      toast.error('Error guardando dictamen en el servidor.');
     } finally {
       setSavingDictamen(false);
     }
@@ -438,16 +458,28 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleDeleteDeliverable = async (dictamenId: number) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar este entregable emitido?')) return;
-    try {
-      await api.delete(`/admin/deliverables/${dictamenId}`);
-      alert('Entregable eliminado exitosamente.');
-      fetchAdminData();
-    } catch (err) {
-      console.error('Error eliminando entregable', err);
-      alert('Error eliminando el entregable.');
-    }
+  const handleDeleteDeliverable = (dictamenId: number) => {
+    setConfirmModalState({
+      isOpen: true,
+      title: '¿Eliminar entregable oficial?',
+      message: '¿Estás seguro de que deseas eliminar este entregable emitido? Esta acción removerá el archivo del expediente del cliente.',
+      confirmText: 'Sí, eliminar',
+      cancelText: 'Cancelar',
+      variant: 'danger',
+      action: async () => {
+        setConfirmModalState(prev => ({ ...prev, loading: true }));
+        try {
+          await api.delete(`/admin/deliverables/${dictamenId}`);
+          toast.success('Entregable eliminado exitosamente.');
+          fetchAdminData();
+        } catch (err) {
+          console.error('Error eliminando entregable', err);
+          toast.error('Error eliminando el entregable.');
+        } finally {
+          setConfirmModalState(prev => ({ ...prev, isOpen: false, loading: false }));
+        }
+      },
+    });
   };
 
   const handleDownloadFile = () => {
@@ -471,10 +503,11 @@ export default function AdminDashboardPage() {
         imssCookie
       });
       setConfigSuccess(true);
+      toast.success('Configuración de notificaciones guardada en BD.');
       setTimeout(() => setConfigSuccess(false), 3000);
     } catch (err) {
       console.error('Error guardando configuración', err);
-      alert('Error guardando la configuración de notificaciones en BD.');
+      toast.error('Error guardando la configuración de notificaciones en BD.');
     }
   };
 
@@ -484,11 +517,13 @@ export default function AdminDashboardPage() {
       const resp = await api.post('/admin/imss/login-refresh');
       if (resp.data && resp.data.cookie) {
         setImssCookie(resp.data.cookie);
-        alert('¡Autenticación con Jordan Digital exitosa! La cookie ha sido renovada.');
+        toast.success('¡Autenticación exitosa!', {
+          description: 'La cookie con Jordan Digital ha sido renovada.',
+        });
       }
     } catch (err: any) {
       console.error('Error probando login Jordan', err);
-      alert(err.response?.data?.message || 'Error al autenticar con Jordan Digital. Verifica usuario y contraseña.');
+      toast.error(err.response?.data?.message || 'Error al autenticar con Jordan Digital. Verifica usuario y contraseña.');
     } finally {
       setLoadingJordanLogin(false);
     }
@@ -527,7 +562,7 @@ export default function AdminDashboardPage() {
     } catch (err: any) {
       console.error('Error en consulta IMSS', err);
       const errMsg = err.response?.data?.message || 'Error al comunicarse con el servicio de Jordan Digital IMSS.';
-      alert(`Error: ${errMsg}`);
+      toast.error(`Error en consulta IMSS: ${errMsg}`);
     } finally {
       setLoadingImss(false);
     }
@@ -558,7 +593,7 @@ export default function AdminDashboardPage() {
       document.body.removeChild(link);
     } catch (err) {
       console.error('Error al descargar y visualizar el PDF del IMSS', err);
-      alert('Error al descargar el archivo PDF del IMSS.');
+      toast.error('Error al descargar el archivo PDF del IMSS.');
     } finally {
       setLoadingDoc(false);
     }
@@ -1141,11 +1176,20 @@ export default function AdminDashboardPage() {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (confirm(`El trámite ${proc.procedureId} ya está CONCLUIDO. ¿Deseas reabrir el dictamen para modificar estatus o entregable?`)) {
-                                          openDictamenModal(proc.leadId, proc.procedureId, proc.serviceOfInterest, proc.status);
-                                        }
+                                        setConfirmModalState({
+                                          isOpen: true,
+                                          title: 'Reabrir dictamen de trámite',
+                                          message: `El trámite ${proc.procedureId} se encuentra actualmente en estatus CONCLUIDO. ¿Deseas reabrir el dictamen para actualizar el estatus o adjuntar un nuevo entregable?`,
+                                          confirmText: 'Sí, reabrir dictamen',
+                                          cancelText: 'Cancelar',
+                                          variant: 'warning',
+                                          action: () => {
+                                            openDictamenModal(proc.leadId, proc.procedureId, proc.serviceOfInterest, proc.status);
+                                            setConfirmModalState(prev => ({ ...prev, isOpen: false }));
+                                          },
+                                        });
                                       }}
-                                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold rounded text-[10px] transition flex items-center gap-1"
+                                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold rounded text-[10px] transition flex items-center gap-1 cursor-pointer"
                                       title="Reabrir dictamen excepcionalmente"
                                     >
                                       <Lock className="w-3 h-3 text-slate-500" /> Reabrir
@@ -2041,6 +2085,27 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* CONFIRM MODAL REUTILIZABLE */}
+      <ConfirmModal
+        isOpen={confirmModalState.isOpen}
+        title={confirmModalState.title}
+        message={confirmModalState.message}
+        confirmText={confirmModalState.confirmText}
+        cancelText={confirmModalState.cancelText}
+        variant={confirmModalState.variant}
+        loading={confirmModalState.loading}
+        onConfirm={() => {
+          if (confirmModalState.action) {
+            confirmModalState.action();
+          }
+        }}
+        onClose={() => {
+          if (!confirmModalState.loading) {
+            setConfirmModalState(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+      />
 
     </div>
   );

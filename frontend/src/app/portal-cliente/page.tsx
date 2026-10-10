@@ -3,10 +3,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { FileText, CheckCircle2, Clock, Shield, FileCheck, LogIn, RefreshCw, Upload, Plus, X, MessageSquare, Lock, ArrowRight, FileCheck2, Info, FileCode, Layers, Download, Award, Eye, Trash2, RefreshCcw } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { formatProcedureId } from '@/utils/procedureUtils';
+import { ConfirmModal } from '@/components/ConfirmModal';
 
 interface DocumentItem {
   id: number;
@@ -68,6 +70,11 @@ export default function PortalClientePage() {
   const [deliverableBlobUrl, setDeliverableBlobUrl] = useState<string | null>(null);
   const [loadingDeliverable, setLoadingDeliverable] = useState<boolean>(false);
   const [viewerTitle, setViewerTitle] = useState<string>('Visualizador de Documento Digital');
+
+  // Confirm modal state
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<boolean>(false);
+  const [docToDelete, setDocToDelete] = useState<{ id: number; name: string } | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState<boolean>(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -131,18 +138,30 @@ export default function PortalClientePage() {
     }
   };
 
-  const handleDeleteDocument = async (docId: number, docName: string) => {
-    if (!confirm(`¿Estás seguro de que deseas eliminar el documento '${docName}' de tu expediente?`)) {
-      return;
-    }
+  const promptDeleteDocument = (docId: number, docName: string) => {
+    setDocToDelete({ id: docId, name: docName });
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteDocument = async () => {
+    if (!docToDelete) return;
+    setDeletingDoc(true);
 
     try {
-      await api.delete(`/portalclient/documents/${docId}`);
-      alert('Documento eliminado correctamente.');
+      await api.delete(`/portalclient/documents/${docToDelete.id}`);
+      toast.success('Documento eliminado correctamente.', {
+        description: `'${docToDelete.name}' ha sido retirado de tu expediente.`,
+      });
+      setDeleteConfirmOpen(false);
+      setDocToDelete(null);
       fetchStatus();
     } catch (err) {
       console.error('Error eliminando documento', err);
-      alert('Error eliminando el documento.');
+      toast.error('Error al eliminar el documento.', {
+        description: 'Intenta nuevamente o contacta a tu asesor GATSA.',
+      });
+    } finally {
+      setDeletingDoc(false);
     }
   };
 
@@ -193,12 +212,16 @@ export default function PortalClientePage() {
         await api.post(`/portalclient/replace-document/${docIdToReplace}`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
-        alert(`¡Documento '${customFileName}' reemplazado exitosamente!`);
+        toast.success('¡Documento reemplazado exitosamente!', {
+          description: `'${customFileName}' ha sido actualizado en tu expediente GATSA.`,
+        });
       } else {
         await api.post('/portalclient/upload-document', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
-        alert(`¡Documento '${customFileName}' adjuntado correctamente a tu expediente GATSA!`);
+        toast.success('¡Documento adjuntado correctamente!', {
+          description: `'${customFileName}' fue agregado a tu expediente GATSA.`,
+        });
       }
 
       setPortalUploadModalOpen(false);
@@ -207,7 +230,7 @@ export default function PortalClientePage() {
       fetchStatus();
     } catch (error) {
       console.error('Error procesando documento', error);
-      alert('Operación procesada en expediente digital.');
+      toast.info('Operación registrada en expediente digital.');
       setPortalUploadModalOpen(false);
       setDocIdToReplace(null);
       setSelectedFile(null);
@@ -451,8 +474,8 @@ export default function PortalClientePage() {
 
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteDocument(doc.id, doc.fileName)}
-                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded transition flex items-center gap-1"
+                                  onClick={() => promptDeleteDocument(doc.id, doc.fileName)}
+                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded transition flex items-center gap-1 cursor-pointer"
                                 >
                                   <Trash2 className="w-3 h-3 text-rose-600" /> Eliminar
                                 </button>
@@ -697,6 +720,24 @@ export default function PortalClientePage() {
           </div>
         </div>
       )}
+
+      {/* CONFIRM MODAL PARA ELIMINAR DOCUMENTO */}
+      <ConfirmModal
+        isOpen={deleteConfirmOpen}
+        title="¿Eliminar documento de expediente?"
+        message={`¿Estás seguro de que deseas eliminar el documento '${docToDelete?.name}' de tu expediente GATSA? Esta acción no se puede deshacer.`}
+        confirmText="Sí, eliminar"
+        cancelText="Cancelar"
+        variant="danger"
+        loading={deletingDoc}
+        onConfirm={confirmDeleteDocument}
+        onClose={() => {
+          if (!deletingDoc) {
+            setDeleteConfirmOpen(false);
+            setDocToDelete(null);
+          }
+        }}
+      />
 
     </div>
   );
