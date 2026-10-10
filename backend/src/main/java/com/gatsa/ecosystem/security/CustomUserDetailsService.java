@@ -24,9 +24,11 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String emailOrPhone) throws UsernameNotFoundException {
-        User user = userRepository.findByEmail(emailOrPhone)
-                .orElseGet(() -> userRepository.findByPhone(emailOrPhone)
-                        .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con correo o teléfono: " + emailOrPhone)));
+        String cleanIdentifier = emailOrPhone != null ? emailOrPhone.trim() : "";
+        User user = userRepository.findByEmailIgnoreCase(cleanIdentifier)
+                .orElseGet(() -> userRepository.findByPhone(cleanIdentifier)
+                        .orElseGet(() -> userRepository.findByEmail(cleanIdentifier)
+                                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con correo o teléfono: " + emailOrPhone))));
 
         String assignedRole = user.getRole();
         if (assignedRole != null && !assignedRole.startsWith("ROLE_")) {

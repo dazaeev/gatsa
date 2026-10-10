@@ -84,12 +84,14 @@ public class TeamController {
 
         boolean isSuper = currentUser != null && ("ROLE_SUPER_ADMIN".equalsIgnoreCase(currentUser.getRole()) || "ROLE_ADMIN".equalsIgnoreCase(currentUser.getRole()));
 
-        // Si es Gerente, no puede asignar otra sucursal que no sea la suya
+        // Si es Gerente o Agente, la sucursal asignada DEBE SER OBLIGATORIAMENTE la suya propia.
+        // Si es Super Admin, puede elegir la sucursal del parámetro branchCode.
         Branch branch = null;
-        if (branchCode != null && !branchCode.isBlank()) {
-            branch = branchRepository.findByCode(branchCode.trim().toUpperCase()).orElse(null);
-        }
-        if (branch == null && !isSuper && currentUser != null) {
+        if (isSuper) {
+            if (branchCode != null && !branchCode.isBlank()) {
+                branch = branchRepository.findByCode(branchCode.trim().toUpperCase()).orElse(null);
+            }
+        } else if (currentUser != null) {
             branch = currentUser.getBranch();
         }
 

@@ -579,11 +579,55 @@ export default function PortalClientePage() {
                   <span>Obteniendo archivo cifrado desde el servidor GATSA...</span>
                 </div>
               ) : deliverableBlobUrl ? (
-                <iframe
-                  src={deliverableBlobUrl}
-                  className="w-full h-[450px] rounded-lg border-0"
-                  title={viewerTitle}
-                />
+                <div className="w-full h-full">
+                  {/* VISTA DESKTOP: Previsualización en iframe */}
+                  <div className="hidden sm:block w-full h-[450px]">
+                    <iframe
+                      src={deliverableBlobUrl}
+                      className="w-full h-full rounded-lg border-0"
+                      title={viewerTitle}
+                    />
+                  </div>
+
+                  {/* VISTA MÓVIL: Tarjeta Ejecutiva de PDF Optimizada para Celulares */}
+                  <div className="block sm:hidden w-full p-6 text-center space-y-4 bg-slate-900 text-white rounded-xl shadow-inner my-auto">
+                    <div className="p-3 bg-sky-500/20 text-sky-400 border border-sky-400/30 rounded-2xl w-fit mx-auto">
+                      <FileText className="w-8 h-8" />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <h4 className="font-extrabold text-xs text-slate-100">{viewerTitle}</h4>
+                      <span className="inline-block px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold rounded-full uppercase mt-1">
+                        Documento Oficial Cifrado
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => window.open(deliverableBlobUrl, '_blank')}
+                        className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4" /> Abrir PDF en Pantalla Completa
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = deliverableBlobUrl;
+                          link.download = 'Documento_GATSA.pdf';
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}
+                        className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Download className="w-4 h-4 text-emerald-400" /> Guardar / Descargar PDF
+                      </button>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="text-center py-12 text-slate-500 text-xs">
                   No se pudo cargar la vista previa del documento.

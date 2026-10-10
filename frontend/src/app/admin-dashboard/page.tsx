@@ -212,8 +212,13 @@ export default function AdminDashboardPage() {
 
       fetchAdminData();
       fetchImssHistory();
-      fetchBranches();
-      fetchTeam();
+      
+      if (isSuperAdmin) {
+        fetchBranches();
+      }
+      if (isSuperAdmin || isGerente) {
+        fetchTeam();
+      }
     } else {
       setLoading(false);
       setAccessDenied(true);
@@ -247,36 +252,37 @@ export default function AdminDashboardPage() {
         address: newBranchAddress,
         phone: newBranchPhone,
       });
-      alert(`¡Sucursal ${newBranchName} creada exitosamente!`);
+      toast.success(`¡Sucursal ${newBranchName} creada exitosamente!`);
       setNewBranchName('');
       setNewBranchCode('');
       setNewBranchAddress('');
       setNewBranchPhone('');
       fetchBranches();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Error al crear la sucursal.');
+      toast.error(err.response?.data?.message || 'Error al crear la sucursal.');
     }
   };
 
   const handleCreateTeamMember = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const effectiveBranchCode = isSuperAdmin ? newTeamBranchCode : (user?.branch || newTeamBranchCode);
       await api.post('/admin/team', {
         fullName: newTeamName,
         phone: newTeamPhone,
         email: newTeamEmail,
         password: newTeamPass,
         role: newTeamRole,
-        branchCode: newTeamBranchCode,
+        branchCode: effectiveBranchCode,
       });
-      alert(`¡Colaborador ${newTeamName} registrado con exito!`);
+      toast.success(`¡Colaborador '${newTeamName}' registrado con éxito!`);
       setNewTeamName('');
       setNewTeamPhone('');
       setNewTeamEmail('');
       setNewTeamPass('');
       fetchTeam();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Error al registrar al colaborador.');
+      toast.error(err.response?.data?.message || 'Error al registrar al colaborador.');
     }
   };
 
@@ -289,7 +295,7 @@ export default function AdminDashboardPage() {
     setLoading(true);
     setAccessDenied(false);
     try {
-      const [leadsResp, docsResp, configResp] = await Promise.all([
+      const promises: Promise<any>[] = [
         api.get('/admin/leads', {
           params: {
             page: leadPage - 1,
@@ -306,35 +312,45 @@ export default function AdminDashboardPage() {
             branch: branchFilter,
           },
         }),
-        api.get('/admin/config'),
-      ]);
+      ];
 
-      if (leadsResp.data && leadsResp.data.content) {
+      if (isSuperAdmin) {
+        promises.push(api.get('/admin/config'));
+      }
+
+      const results = await Promise.all(promises);
+      const leadsResp = results[0];
+      const docsResp = results[1];
+      const configResp = isSuperAdmin ? results[2] : null;
+
+      if (leadsResp && leadsResp.data && leadsResp.data.content) {
         setLeads(leadsResp.data.content);
         setTotalLeadPages(leadsResp.data.totalPages || 1);
         setTotalLeadsCount(leadsResp.data.totalElements || 0);
-      } else {
+      } else if (leadsResp) {
         setLeads(Array.isArray(leadsResp.data) ? leadsResp.data : []);
       }
 
-      if (docsResp.data && docsResp.data.content) {
+      if (docsResp && docsResp.data && docsResp.data.content) {
         setClientGroups(docsResp.data.content);
         setTotalDocPages(docsResp.data.totalPages || 1);
         setTotalDocsCount(docsResp.data.totalElements || 0);
-      } else {
+      } else if (docsResp) {
         setClientGroups(Array.isArray(docsResp.data) ? docsResp.data : []);
       }
 
-      if (configResp.data) {
+      if (configResp && configResp.data) {
         if (configResp.data.adminEmail) setAdminEmail(configResp.data.adminEmail);
         if (configResp.data.imssCookie) setImssCookie(configResp.data.imssCookie);
         if (configResp.data.imssUser) setImssUser(configResp.data.imssUser);
         if (configResp.data.imssPass) setImssPass(configResp.data.imssPass);
       }
     } catch (error: any) {
-      console.warn('Sesión caducada o token inválido en panel de administración');
-      setAccessDenied(true);
-      logout();
+      console.warn('Carga de datos parcial en panel operativo', error);
+      if (error.response && error.response.status === 401) {
+        setAccessDenied(true);
+        logout();
+      }
     } finally {
       setLoading(false);
     }
@@ -584,13 +600,16 @@ export default function AdminDashboardPage() {
       const blobUrl = URL.createObjectURL(blob);
       setDocBlobUrl(blobUrl);
 
-      // Disparar descarga automática en el navegador
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Solo en laptops/desktop dispara la descarga automática en segundo plano. En móviles se abre el modal responsivo.
+      const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+      if (!isMobile) {
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     } catch (err) {
       console.error('Error al descargar y visualizar el PDF del IMSS', err);
       toast.error('Error al descargar el archivo PDF del IMSS.');
@@ -2053,11 +2072,49 @@ export default function AdminDashboardPage() {
                   <span>Obteniendo archivo cifrado desde el servidor GATSA...</span>
                 </div>
               ) : docBlobUrl ? (
-                <iframe
-                  src={docBlobUrl}
-                  className="w-full h-[60vh] sm:h-[450px] rounded-lg border-0"
-                  title={selectedDocInfo.fileName}
-                />
+                <div className="w-full h-full">
+                  {/* VISTA DESKTOP: Previsualización en iframe */}
+                  <div className="hidden sm:block w-full h-[450px]">
+                    <iframe
+                      src={docBlobUrl}
+                      className="w-full h-full rounded-lg border-0"
+                      title={selectedDocInfo.fileName}
+                    />
+                  </div>
+
+                  {/* VISTA MÓVIL: Tarjeta Ejecutiva de PDF Optimizada para Celulares */}
+                  <div className="block sm:hidden w-full p-6 text-center space-y-4 bg-slate-900 text-white rounded-xl shadow-inner my-auto">
+                    <div className="p-3 bg-sky-500/20 text-sky-400 border border-sky-400/30 rounded-2xl w-fit mx-auto">
+                      <FileText className="w-8 h-8" />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <h4 className="font-extrabold text-xs text-slate-100">{selectedDocInfo.docType}</h4>
+                      <p className="text-[11px] text-sky-300 font-mono break-all">{selectedDocInfo.fileName}</p>
+                      <span className="inline-block px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold rounded-full uppercase mt-1">
+                        Documento Certificado Oficial
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => window.open(docBlobUrl, '_blank')}
+                        className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4" /> Abrir PDF en Pantalla Completa
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDownloadFile}
+                        className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Download className="w-4 h-4 text-emerald-400" /> Guardar / Descargar PDF
+                      </button>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="text-center py-12 text-slate-500 text-xs">
                   No se pudo cargar la vista previa.

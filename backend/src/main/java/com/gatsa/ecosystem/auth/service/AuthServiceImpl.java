@@ -44,9 +44,10 @@ public class AuthServiceImpl implements AuthService {
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        User user = userRepository.findByEmail(identifier)
+        User user = userRepository.findByEmailIgnoreCase(identifier)
                 .orElseGet(() -> userRepository.findByPhone(identifier)
-                        .orElseThrow(() -> new RuntimeException("Usuario no encontrado con identificador: " + identifier)));
+                        .orElseGet(() -> userRepository.findByEmail(identifier)
+                                .orElseThrow(() -> new RuntimeException("Usuario no encontrado con identificador: " + identifier))));
 
         String jwt = tokenProvider.generateToken(authentication, user.getRole());
 
