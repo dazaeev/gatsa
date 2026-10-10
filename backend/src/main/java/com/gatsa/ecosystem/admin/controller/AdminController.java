@@ -853,6 +853,64 @@ public class AdminController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/imss/export-excel")
+    public ResponseEntity<byte[]> exportImssHistoryToExcel(
+            @RequestParam(value = "search", required = false) String search,
+            @RequestParam(value = "branch", required = false) String branch,
+            org.springframework.security.core.Authentication auth) {
+
+        User currentUser = userRepository.findByEmail(auth.getName())
+                .orElseGet(() -> userRepository.findByPhone(auth.getName()).orElse(null));
+
+        boolean isSuper = currentUser != null && ("ROLE_SUPER_ADMIN".equalsIgnoreCase(currentUser.getRole()) || "ROLE_ADMIN".equalsIgnoreCase(currentUser.getRole()));
+
+        String targetBranch;
+        if (isSuper) {
+            targetBranch = (branch != null && !branch.isBlank()) ? branch : "ALL";
+        } else if (currentUser != null && currentUser.getBranch() != null) {
+            targetBranch = currentUser.getBranch().getCode();
+        } else {
+            targetBranch = "ALL";
+        }
+
+        org.springframework.data.domain.Pageable unpaged = org.springframework.data.domain.PageRequest.of(
+                0,
+                100000,
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt")
+        );
+
+        org.springframework.data.domain.Page<ImssConsultationLog> logPage = imssLogRepository.findFilteredLogs(
+                targetBranch,
+                search != null ? search.trim() : "",
+                unpaged
+        );
+
+        StringBuilder csv = new StringBuilder();
+        // UTF-8 BOM para compatibilidad directa con Microsoft Excel
+        csv.append("\uFEFF");
+        csv.append("ID Auditoria,CURP,SID Folio,Empleado Operador,Rol Operativo,Sucursal,Nombre Archivo PDF,Fecha y Hora Consulta\n");
+
+        for (ImssConsultationLog log : logPage.getContent()) {
+            csv.append("\"").append(log.getId()).append("\",");
+            csv.append("\"").append(log.getCurp() != null ? log.getCurp() : "").append("\",");
+            csv.append("\"").append(log.getSid() != null ? log.getSid() : "").append("\",");
+            csv.append("\"").append(log.getUserFullName() != null ? log.getUserFullName() : "").append("\",");
+            csv.append("\"").append(log.getUserRole() != null ? log.getUserRole() : "").append("\",");
+            csv.append("\"").append(log.getBranchCode() != null ? log.getBranchCode() : "").append("\",");
+            csv.append("\"").append(log.getPdfFileName() != null ? log.getPdfFileName() : "").append("\",");
+            csv.append("\"").append(log.getCreatedAt() != null ? log.getCreatedAt().toString() : "").append("\"\n");
+        }
+
+        byte[] exportBytes = csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String fileName = "Auditoria_Consultas_IMSS_GATSA.csv";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
+        headers.setContentDisposition(ContentDisposition.attachment().filename(fileName).build());
+
+        return new ResponseEntity<>(exportBytes, headers, HttpStatus.OK);
+    }
+
     private String extractArchivoGenerado(Map<?, ?> respBody) {
         if (respBody == null) return null;
 

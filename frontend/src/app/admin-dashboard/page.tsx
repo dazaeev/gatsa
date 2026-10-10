@@ -551,6 +551,35 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleExportImssToExcel = async () => {
+    try {
+      toast.info('Generando reporte de auditoría para Excel...');
+      const response = await api.get('/admin/imss/export-excel', {
+        params: {
+          search: imssSearchTerm.trim(),
+          branch: branchFilter,
+        },
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Auditoria_Consultas_IMSS_GATSA_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success('Reporte exportado exitosamente.', {
+        description: 'El archivo CSV compatible con Excel ha sido descargado.',
+      });
+    } catch (err) {
+      console.error('Error exportando historial a Excel', err);
+      toast.error('Error al generar la exportación a Excel.');
+    }
+  };
+
   const fetchImssHistory = async () => {
     try {
       const resp = await api.get('/admin/imss/history', {
@@ -1605,6 +1634,14 @@ export default function AdminDashboardPage() {
                   className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
                 >
                   <Search className="w-3.5 h-3.5" /> Buscar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportImssToExcel}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0 shadow-xs"
+                  title="Exportar auditoría filtrada a Excel / CSV"
+                >
+                  <Download className="w-3.5 h-3.5" /> Exportar Excel
                 </button>
                 <button
                   type="button"
