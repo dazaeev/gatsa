@@ -796,22 +796,40 @@ public class AdminController {
     }
 
     @GetMapping("/imss/history")
-    public ResponseEntity<List<Map<String, Object>>> getImssFilesHistory(org.springframework.security.core.Authentication auth) {
+    public ResponseEntity<Map<String, Object>> getImssFilesHistory(
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "15") int size,
+            @RequestParam(value = "search", required = false) String search,
+            @RequestParam(value = "branch", required = false) String branch,
+            org.springframework.security.core.Authentication auth) {
+
         User currentUser = userRepository.findByEmail(auth.getName())
                 .orElseGet(() -> userRepository.findByPhone(auth.getName()).orElse(null));
 
         boolean isSuper = currentUser != null && ("ROLE_SUPER_ADMIN".equalsIgnoreCase(currentUser.getRole()) || "ROLE_ADMIN".equalsIgnoreCase(currentUser.getRole()));
 
-        List<ImssConsultationLog> logs;
+        String targetBranch;
         if (isSuper) {
-            logs = imssLogRepository.findAllByOrderByCreatedAtDesc();
+            targetBranch = (branch != null && !branch.isBlank()) ? branch : "ALL";
         } else if (currentUser != null && currentUser.getBranch() != null) {
-            logs = imssLogRepository.findByBranchCodeOrderByCreatedAtDesc(currentUser.getBranch().getCode());
+            targetBranch = currentUser.getBranch().getCode();
         } else {
-            logs = List.of();
+            targetBranch = "ALL";
         }
 
-        List<Map<String, Object>> result = logs.stream().map(log -> {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, page),
+                Math.max(1, size),
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt")
+        );
+
+        org.springframework.data.domain.Page<ImssConsultationLog> logPage = imssLogRepository.findFilteredLogs(
+                targetBranch,
+                search != null ? search.trim() : "",
+                pageable
+        );
+
+        List<Map<String, Object>> items = logPage.getContent().stream().map(log -> {
             Map<String, Object> map = new HashMap<>();
             map.put("id", log.getId());
             map.put("curp", log.getCurp());
@@ -825,7 +843,14 @@ public class AdminController {
             return map;
         }).toList();
 
-        return ResponseEntity.ok(result);
+        Map<String, Object> response = new HashMap<>();
+        response.put("content", items);
+        response.put("totalPages", logPage.getTotalPages());
+        response.put("totalElements", logPage.getTotalElements());
+        response.put("currentPage", logPage.getNumber());
+        response.put("pageSize", logPage.getSize());
+
+        return ResponseEntity.ok(response);
     }
 
     private String extractArchivoGenerado(Map<?, ?> respBody) {
